@@ -11,8 +11,9 @@ performance. See `plan.md` §16 for the parity policy and Deviation Registry, an
 - Workspace scaffolded (10 crates); `cargo test` and `cargo fmt --check` are green.
 - Parity harnesses green: `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
   `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines) and `terrain_parity`
-  (1,542 lines; base-terrain shape).
-- Next: the worldgen ladder — terrain surface blocks → `worldgen_seed` (milestone M1).
+  (16,191 lines; full overworld base terrain).
+- Next: the worldgen ladder — `worldgen_seed` (milestone M1: caves/ravines, structures, decoration,
+  heightmap).
 
 ## Layout
 

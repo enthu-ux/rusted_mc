@@ -46,7 +46,7 @@ py tools/parity.py random     # one harness by name
 
 Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 passed`
 (`random_parity` 3,848 lines; `noise_parity` 1,047 lines; `noise_batch_parity` 369 lines;
-`biome_layer_parity` 4,626 lines; `terrain_parity` 1,542 lines).
+`biome_layer_parity` 4,626 lines; `terrain_parity` 16,191 lines).
 
 ## Environment (mostly local, NOT in git)
 
@@ -73,12 +73,13 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 p
 - **Workspace:** 10 crates scaffolded; `cargo test` + `fmt` green.
 - **Harnesses green:** `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
   `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines), `terrain_parity`
-  (1,542 lines; base-terrain *shape* only).
+  (16,191 lines; full base terrain: shape + surface blocks).
 - **Implemented:** `mc-core::random` (exact `java.util.Random`); `mc-worldgen::noise`
   (`Improved`; `Simplex` incl. 2D batch `func_151606_a`; `Octaves`; `Perlin` incl. batch
   `func_151600_a`/`func_151599_a`); `mc-worldgen::layer` (the full `GenLayer*` biome stack +
-  biome metadata); `mc-worldgen::terrain` (the overworld density field: `setBlocksInChunk` +
-  `func_147423_a` → stone/water/air). Golden unit tests: 10 in `mc-worldgen`, 4 in `mc-core`.
+  biome metadata); `mc-worldgen::terrain` (full overworld base terrain: `setBlocksInChunk` +
+  `func_147423_a` + `replaceBlocksForBiome`, incl. the Hills/Taiga/Swamp/Savanna.Mutated/Mesa
+  generators). Golden unit tests: 11 in `mc-worldgen`, 4 in `mc-core`.
 - **Docs/policy:** `plan.md` (sections 1-17), `README.md`, `AGENTS.md`, `docs/PHILOSOPHY.md`,
   `docs/ARCHITECTURE.md`, `docs/deviations.md`, `deviations.toml`, `docs/horizon-reuse.md`,
   `scripts/verify.ps1`.
@@ -91,14 +92,16 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 p
 1. ~~**`biome_layer_parity`**~~ **DONE (2026-11-20):** ported the `GenLayer*` stack
    (`mc-worldgen::layer`) + biome metadata; harness green at 4,626 lines (seeds 0/12345/-7, both
    `genBiomes` and the Voronoi `biomeIndexLayer`, positive + negative chunk areas).
-2. **`terrain_parity` — surface blocks (next).** `mc-worldgen::terrain` already matches the
-   base-terrain *shape* (`setBlocksInChunk`). Remaining: `replaceBlocksForBiome` /
-   `BiomeGenBase.generateBiomeTerrain` (top/filler + water/ice/bedrock/gravel) and the biome
-   overrides — `BiomeGenHills`, `BiomeGenTaiga`, `BiomeGenSwamp`, `BiomeGenSavanna.Mutated`, and
-   **Mesa's custom clay generator** (`BiomeGenMesa.genTerrainBlocks` + `func_150619_a` +
-   `func_180629_a`). Extend `test_terrain_parity.py` to the full block (id+meta) column.
-   *Done when:* the extended harness is green (line count recorded).
+2. ~~**`terrain_parity`**~~ **DONE (2026-11-20):** full base terrain ported
+   (`mc-worldgen::terrain`): shape + `replaceBlocksForBiome` + the Hills/Taiga/Swamp/
+   Savanna.Mutated/Mesa generators, running the real `provideChunk` in the oracle; harness green
+   at 16,191 lines (seeds 0/12345/-7 × 21 chunks covering mesa incl. mutations, snow, swamp,
+   mega-taiga podzol, savanna/hills mutations, mushroom, jungle, ocean). Covered states: 22 block
+   kinds. **Not covered:** `ice` (frozen-ocean is unreachable in the default layer stack) and
+   `red_sandstone` (needs red-sand filler in the default generator; no biome uses it).
 3. **`worldgen_seed`** - full chunk parity (blocks + metadata + biome + heightmap) = **milestone M1**.
+   Remaining vs `terrain_parity`: caves/ravines, structures, the decoration (populate) pass, and
+   the heightmap/biome array.
 4. **Deferred:** performance architecture contract + perf harness (benchmark vs Java 1.8.9 +
    OptiFine, instruction/allocation budgets).
 
@@ -122,6 +125,10 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 p
   the reusable route for `provideChunk`/tick/protocol oracles.
 - Biome terrain constants (min/max height, temp, top/filler block id+meta per id incl. mutations)
   were dumped from the live game; the full table is in `mc-worldgen::terrain`.
+- **Mesa cache quirk:** `BiomeGenMesa` caches its per-world noise on first use with the *previous*
+  `field_150622_aD` (0 on a fresh JVM), so `aE`/`aF` come from `Random(0)`; `TerrainOracle` runs
+  one seed per JVM to match. `func_150619_a`'s orange-band loop increments the index by
+  `nextInt(5)+2` per step (body `+=` **and** for-loop `++`).
 
 ## Session log (append-only)
 
@@ -157,3 +164,11 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 p
   `crates/mc-worldgen/examples/terrain_probe.rs`, `tools/test_terrain_parity.py` (seeds
   0/12345/-7 × chunks (0,0),(1,-1); one line per (x,z) column, y=0..255), 1 golden test.
   **`terrain_parity` (shape) green at 1,542 lines; `verify.ps1` green: `5/5 passed`.**
+- **2026-11-20 - session 4 (terrain surface).** Completed the base-terrain port in
+  `mc-worldgen::terrain`: `replaceBlocksForBiome`, `BiomeGenBase.generateBiomeTerrain`, and the
+  Hills / Taiga / Swamp / Savanna.Mutated / Mesa generators (`genTerrainBlocks` + `func_150619_a`
+  + `func_180629_a`), with per-id temp + top/filler tables dumped from the game. Oracle switched
+  to the real `provideChunk` (caves/ravines/structures off) and one seed per JVM (Mesa caches its
+  per-world noise); fixtures expanded to 21 chunks covering mesa/mutations/snow/swamp/taiga/
+  savanna/mushroom/jungle/ocean. **`terrain_parity` green at 16,191 lines** (22 block kinds);
+  2 golden tests. `verify.ps1` green: `5/5 passed`.

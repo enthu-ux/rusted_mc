@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""terrain_parity: does mc-worldgen's base-terrain shape match real 1.8.9?
+"""terrain_parity: does mc-worldgen's base terrain match real 1.8.9?
 
-Runs the game's own `ChunkProviderGenerate.setBlocksInChunk` (server remapped jar, JDK 8) for
-fixed seeds/chunks and compares the stone/water/air shape against the Rust probe
-(`crates/mc-worldgen/examples/terrain_probe.rs`). Outputs cached under .local/terrain/.
+Runs the game's own `ChunkProviderGenerate.provideChunk` (server remapped jar, JDK 8; caves,
+ravines and structures disabled) for fixed seeds/chunks and compares the full block column
+against the Rust probe (`crates/mc-worldgen/examples/terrain_probe.rs`). One fresh JVM per seed
+(Mesa caches per-world noise on first use). Outputs cached under .local/terrain/.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "TerrainOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "terrain"
 ORACLE_CLASSES = WORK / "oracle-classes"
+SEEDS = ["0", "12345", "-7"]
 
 
 def find_cargo() -> str:
@@ -48,11 +50,14 @@ def main() -> int:
         return 2
 
     cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
-    r = run(["java", "-cp", cp, "TerrainOracle"])
-    if r.returncode != 0:
-        print("java oracle failed:\n" + r.stdout + r.stderr)
-        return 2
-    vanilla = r.stdout
+    vanilla_parts = []
+    for seed in SEEDS:
+        r = run(["java", "-cp", cp, "TerrainOracle", seed])
+        if r.returncode != 0:
+            print("java oracle failed:\n" + r.stdout + r.stderr)
+            return 2
+        vanilla_parts.append(r.stdout)
+    vanilla = "".join(vanilla_parts)
 
     r = run([find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "terrain_probe"])
     if r.returncode != 0:
