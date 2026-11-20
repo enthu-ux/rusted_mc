@@ -301,6 +301,7 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | First harness | `tools/test_random_parity.py` (+ `oracle/java/src/RandomOracle.java`, `crates/mc-core/examples/random_probe.rs`) | ✅ `random_parity` green: 3,848 lines match `java.util.Random` |
 | Noise | `crates/mc-worldgen/src/noise.rs` + `tools/test_noise_parity.py` (+ `NoiseOracle.java`) | ✅ `noise_parity` green: 1,047 lines match (Improved, Simplex, Perlin, Octaves) |
 | Noise (batch) | `crates/mc-worldgen/src/noise.rs` + `tools/test_noise_batch_parity.py` (+ `NoiseBatchOracle.java`) | ✅ `noise_batch_parity` green: 369 lines match (`Perlin.func_151599_a`/`func_151600_a`, `Simplex.func_151606_a`) |
+| Biome layers | `crates/mc-worldgen/src/layer.rs` + `tools/test_biome_layer_parity.py` (+ `BiomeLayerOracle.java`) | ✅ `biome_layer_parity` green: 4,626 lines match (full `GenLayer*` stack; default overworld) |
 | Handoff / repo | `handoff.md`, `AGENTS.md`, `scripts/verify.ps1`, `.gitattributes`, git remote | ✅ pushed to `enthu-ux/rusted_mc` (`main`); `scripts/verify.ps1` runs tests + fmt + parity |
 
 **Notes**

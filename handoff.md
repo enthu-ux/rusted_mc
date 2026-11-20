@@ -44,8 +44,9 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `3/3 passed`
-(`random_parity` 3,848 lines; `noise_parity` 1,047 lines; `noise_batch_parity` 369 lines).
+Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `4/4 passed`
+(`random_parity` 3,848 lines; `noise_parity` 1,047 lines; `noise_batch_parity` 369 lines;
+`biome_layer_parity` 4,626 lines).
 
 ## Environment (mostly local, NOT in git)
 
@@ -71,10 +72,11 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `3/3 p
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
 - **Workspace:** 10 crates scaffolded; `cargo test` + `fmt` green.
 - **Harnesses green:** `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
-  `noise_batch_parity` (369 lines).
+  `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines).
 - **Implemented:** `mc-core::random` (exact `java.util.Random`); `mc-worldgen::noise`
   (`Improved`; `Simplex` incl. 2D batch `func_151606_a`; `Octaves`; `Perlin` incl. batch
-  `func_151600_a`/`func_151599_a`). Golden unit tests: 5 in `mc-worldgen`, 4 in `mc-core`.
+  `func_151600_a`/`func_151599_a`); `mc-worldgen::layer` (the full `GenLayer*` biome stack +
+  biome metadata). Golden unit tests: 9 in `mc-worldgen`, 4 in `mc-core`.
 - **Docs/policy:** `plan.md` (sections 1-17), `README.md`, `AGENTS.md`, `docs/PHILOSOPHY.md`,
   `docs/ARCHITECTURE.md`, `docs/deviations.md`, `deviations.toml`, `docs/horizon-reuse.md`,
   `scripts/verify.ps1`.
@@ -84,7 +86,9 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `3/3 p
 
 0. ~~**`noise_batch_parity`**~~ **DONE (2026-11-20):** ported `Perlin.func_151599_a`/`func_151600_a`
    and `Simplex.func_151606_a`; harness green at 369 lines.
-1. **`biome_layer_parity`** - port the `GenLayer*` stack; compare biome ids for a chunk area.
+1. ~~**`biome_layer_parity`**~~ **DONE (2026-11-20):** ported the `GenLayer*` stack
+   (`mc-worldgen::layer`) + biome metadata; harness green at 4,626 lines (seeds 0/12345/-7, both
+   `genBiomes` and the Voronoi `biomeIndexLayer`, positive + negative chunk areas).
 2. **`terrain_parity`** - `ChunkProviderGenerate` base terrain (blocks before decoration).
 3. **`worldgen_seed`** - full chunk parity (blocks + metadata + biome + heightmap) = **milestone M1**.
 4. **Deferred:** performance architecture contract + perf harness (benchmark vs Java 1.8.9 +
@@ -96,6 +100,13 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `3/3 p
 - External **sound** assets not downloaded (optional until audio work).
 - `vendor/horizon` is gitignored (a nested checkout); recreate via `docs/horizon-reuse.md`.
 - Decided but not built: the curated **fixes layer** (registry entries; modelled on Horizon's anticheat).
+- **Biome-layer gotcha (verified by reflection):** `GenLayerHills.field_151628_d`'s two top `Zoom`
+  nodes are never seeded (`GenLayerHills` doesn't override `initWorldGenSeed`), so they keep
+  `worldGenSeed = 0`; the `RiverInit`/base chain beneath them is shared with the river chain and
+  *is* seeded. `mc-worldgen::layer` mirrors this by pre-seeding the inner chain before wrapping it
+  in the two unseeded Zooms (see the comment in `BiomeLayers::new`).
+- Biome/-noise oracles need `net.minecraft.init.Bootstrap.register()` before any `BiomeGenBase`
+  static init (touches `Blocks`). Oracle runs drop an empty `logs/` (`gitignore`d).
 
 ## Session log (append-only)
 
@@ -114,3 +125,12 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `3/3 p
   `tools/test_noise_batch_parity.py`; 3 golden unit tests. **`noise_batch_parity` green (369 lines);
   `verify.ps1` green: `3/3 passed`.** Existing `noise_parity` (1,047) and `random_parity` (3,848)
   untouched.
+- **2026-11-20 - session 2 (biome layers).** Ported the `GenLayer*` biome stack for default
+  overworld into `crates/mc-worldgen/src/layer.rs` (+ biome metadata): Island, FuzzyZoom, Zoom,
+  AddIsland, RemoveTooMuchOcean, AddSnow, Edge (all 3 modes), AddMushroomIsland, DeepOcean, Biome,
+  BiomeEdge, Hills, RareBiome, RiverInit, River, Smooth, Shore, RiverMix, VoronoiZoom. Added
+  `oracle/java/src/BiomeLayerOracle.java`, `crates/mc-worldgen/examples/biome_layer_probe.rs`,
+  `tools/test_biome_layer_parity.py`, 4 golden unit tests. Found and fixed a subtle vanilla quirk:
+  `GenLayerHills.field_151628_d` is unseeded at its two top Zooms but seeded below (shared with the
+  river chain) - confirmed via reflection. **`biome_layer_parity` green (4,626 lines);
+  `verify.ps1` green: `4/4 passed`.**

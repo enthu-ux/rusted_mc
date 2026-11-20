@@ -25,3 +25,7 @@ target/
 
 # Local harness working data
 .local/
+
+# Minecraft/Forge logging output from oracle runs
+logs/
+run/
