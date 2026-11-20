@@ -44,9 +44,9 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 passed`
+Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `6/6 passed`
 (`random_parity` 3,848 lines; `noise_parity` 1,047 lines; `noise_batch_parity` 369 lines;
-`biome_layer_parity` 4,626 lines; `terrain_parity` 16,191 lines).
+`biome_layer_parity` 4,626 lines; `terrain_parity` 16,191 lines; `math_parity` 492 lines).
 
 ## Environment (mostly local, NOT in git)
 
@@ -73,13 +73,14 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 p
 - **Workspace:** 10 crates scaffolded; `cargo test` + `fmt` green.
 - **Harnesses green:** `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
   `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines), `terrain_parity`
-  (16,191 lines; full base terrain: shape + surface blocks).
-- **Implemented:** `mc-core::random` (exact `java.util.Random`); `mc-worldgen::noise`
+  (16,191 lines; full base terrain: shape + surface blocks), `math_parity` (492 lines).
+- **Implemented:** `mc-core::random` (exact `java.util.Random`); `mc-core::jmath` (`MathHelper`
+  sin/cos table + floor/clamp/denormalize helpers); `mc-worldgen::noise`
   (`Improved`; `Simplex` incl. 2D batch `func_151606_a`; `Octaves`; `Perlin` incl. batch
   `func_151600_a`/`func_151599_a`); `mc-worldgen::layer` (the full `GenLayer*` biome stack +
   biome metadata); `mc-worldgen::terrain` (full overworld base terrain: `setBlocksInChunk` +
   `func_147423_a` + `replaceBlocksForBiome`, incl. the Hills/Taiga/Swamp/Savanna.Mutated/Mesa
-  generators). Golden unit tests: 11 in `mc-worldgen`, 4 in `mc-core`.
+  generators). Golden unit tests: 11 in `mc-worldgen`, 6 in `mc-core`.
 - **Docs/policy:** `plan.md` (sections 1-17), `README.md`, `AGENTS.md`, `docs/PHILOSOPHY.md`,
   `docs/ARCHITECTURE.md`, `docs/deviations.md`, `deviations.toml`, `docs/horizon-reuse.md`,
   `scripts/verify.ps1`.
@@ -99,9 +100,12 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 p
    mega-taiga podzol, savanna/hills mutations, mushroom, jungle, ocean). Covered states: 22 block
    kinds. **Not covered:** `ice` (frozen-ocean is unreachable in the default layer stack) and
    `red_sandstone` (needs red-sand filler in the default generator; no biome uses it).
-3. **`worldgen_seed`** - full chunk parity (blocks + metadata + biome + heightmap) = **milestone M1**.
-   Remaining vs `terrain_parity`: caves/ravines, structures, the decoration (populate) pass, and
-   the heightmap/biome array.
+3. **`worldgen_seed` — M1 (in progress).** `mc-core::jmath` (MathHelper sin/cos table + helpers)
+   and `math_parity` are done. Remaining increments:
+   (a) `MapGenCaves` + `MapGenRavine`; (b) structures (mineshaft / village / stronghold /
+   scattered feature / ocean monument); (c) decoration (`BiomeDecorator` + the feature generators);
+   (d) heightmap + biome array. *Done when:* the full chunk (blocks + metadata + biome + heightmap)
+   matches for the Gate-C seeds/chunks.
 4. **Deferred:** performance architecture contract + perf harness (benchmark vs Java 1.8.9 +
    OptiFine, instruction/allocation budgets).
 
@@ -175,3 +179,9 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 p
   per-world noise); fixtures expanded to 21 chunks covering mesa/mutations/snow/swamp/taiga/
   savanna/mushroom/jungle/ocean. **`terrain_parity` green at 16,191 lines** (22 block kinds);
   2 golden tests. `verify.ps1` green: `5/5 passed`.
+- **2026-11-20 - session 5 (jmath + worldgen_seed start).** Locked the rendering backend
+  (Vulkan/wgpu) in the docs. Started `worldgen_seed`: ported `mc-core::jmath`
+  (`MathHelper` sin/cos table + floor/clamp/denormalize helpers) with a new `math_parity` harness
+  (oracle `MathOracle.java` + probe `math_probe.rs`), 2 golden tests. **`math_parity` green at 492
+  lines.** Scoped the rest of M1: caves/ravines, structures, decoration, heightmap/biome array.
+  `verify.ps1` green: `6/6 passed`.

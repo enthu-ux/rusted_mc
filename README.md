@@ -10,10 +10,9 @@ performance. See `plan.md` §16 for the parity policy and Deviation Registry, an
 - Inputs downloaded and verified: 1.8.9 jars, clean vanilla decompile, MCP stable_22, protocol data.
 - Workspace scaffolded (10 crates); `cargo test` and `cargo fmt --check` are green.
 - Parity harnesses green: `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
-  `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines) and `terrain_parity`
-  (16,191 lines; full overworld base terrain).
-- Next: the worldgen ladder — `worldgen_seed` (milestone M1: caves/ravines, structures, decoration,
-  heightmap).
+  `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines), `terrain_parity`
+  (16,191 lines; full overworld base terrain) and `math_parity` (492 lines).
+- Next: `worldgen_seed` / M1 — caves + ravines, structures, decoration, heightmap/biome array.
 
 ## Layout
 
