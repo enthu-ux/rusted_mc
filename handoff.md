@@ -111,6 +111,9 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 p
 - External **sound** assets not downloaded (optional until audio work).
 - `vendor/horizon` is gitignored (a nested checkout); recreate via `docs/horizon-reuse.md`.
 - Decided but not built: the curated **fixes layer** (registry entries; modelled on Horizon's anticheat).
+- **Rendering backend (locked):** **Vulkan via `wgpu`** (Horizon's `gfx` device layer) - **no
+  OpenGL/LWJGL**. Internal API swap: pixels are gated by the render harness (same art, no
+  glitches), so it is not a Deviation Registry entry (plan.md §13, `docs/ARCHITECTURE.md`).
 - **Biome-layer gotcha (verified by reflection):** `GenLayerHills.field_151628_d`'s two top `Zoom`
   nodes are never seeded (`GenLayerHills` doesn't override `initWorldGenSeed`), so they keep
   `worldGenSeed = 0`; the `RiverInit`/base chain beneath them is shared with the river chain and

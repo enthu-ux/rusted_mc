@@ -197,6 +197,10 @@ Version-agnostic and directly address "don't reinvent the wheel":
   - **Take:** NBT, region files, varint/framing/encryption, wgpu device layer, thread pools / io pool, arenas, culling (frustum / occlusion / cave / GPU), `SharedFrames`, benchmark + `parity.py` / `port_ledger.py` scaffolding, `check_public_tree`.
   - **Write ourselves:** worldgen, redstone / update order, combat, physics, old lighting, block models / renderer, protocol packet set.
 - **License:** reused parts are LGPL-3.0; keep them isolated in `vendor/` and publish modifications.
+- **Rendering backend:** **Vulkan via wgpu** (Horizon's `gfx` device layer) — **no OpenGL/LWJGL**.
+  This is an internal API swap, not a player-visible change: the **render harness still gates the
+  pixels** (same art, no glitches), so it needs no Deviation Registry entry (cf. §17 "performance
+  internals may differ").
 
 ### Performance targets
 

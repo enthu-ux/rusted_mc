@@ -13,8 +13,14 @@ lighting and I/O only. Every module has two gates: **parity** (matches real 1.8.
 | mc-world | Chunk storage, blocks, light, ticks | mc-core, mc-nbt, mc-worldgen |
 | mc-entity | Entities, physics, AI, spawning | mc-core, mc-world |
 | mc-server | Authoritative tick loop | mc-core, mc-world, mc-entity, mc-proto |
-| mc-render | wgpu renderer, meshing, culling | mc-core, mc-world, mc-assets |
+| mc-render | wgpu (Vulkan) renderer, meshing, culling | mc-core, mc-world, mc-assets |
 | mc-assets | Read assets from own client jar | mc-core |
 | mc-client | Prediction, input, camera, integrated server | all of the above |
+
+## Rendering backend
+
+Rendering targets **Vulkan via `wgpu`** (Horizon's `gfx` device layer) — **not OpenGL/LWJGL**.
+The API swap is internal: parity is judged on **pixels** by the render harness, so it is not a
+registered deviation. GPU culling / indirect draws / device layer come from `vendor/horizon`.
 
 See plan.md sections 6-7 for the production line and the architecture contract.
