@@ -44,9 +44,9 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `4/4 passed`
+Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `5/5 passed`
 (`random_parity` 3,848 lines; `noise_parity` 1,047 lines; `noise_batch_parity` 369 lines;
-`biome_layer_parity` 4,626 lines).
+`biome_layer_parity` 4,626 lines; `terrain_parity` 1,542 lines).
 
 ## Environment (mostly local, NOT in git)
 
@@ -72,11 +72,13 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `4/4 p
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
 - **Workspace:** 10 crates scaffolded; `cargo test` + `fmt` green.
 - **Harnesses green:** `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
-  `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines).
+  `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines), `terrain_parity`
+  (1,542 lines; base-terrain *shape* only).
 - **Implemented:** `mc-core::random` (exact `java.util.Random`); `mc-worldgen::noise`
   (`Improved`; `Simplex` incl. 2D batch `func_151606_a`; `Octaves`; `Perlin` incl. batch
   `func_151600_a`/`func_151599_a`); `mc-worldgen::layer` (the full `GenLayer*` biome stack +
-  biome metadata). Golden unit tests: 9 in `mc-worldgen`, 4 in `mc-core`.
+  biome metadata); `mc-worldgen::terrain` (the overworld density field: `setBlocksInChunk` +
+  `func_147423_a` → stone/water/air). Golden unit tests: 10 in `mc-worldgen`, 4 in `mc-core`.
 - **Docs/policy:** `plan.md` (sections 1-17), `README.md`, `AGENTS.md`, `docs/PHILOSOPHY.md`,
   `docs/ARCHITECTURE.md`, `docs/deviations.md`, `deviations.toml`, `docs/horizon-reuse.md`,
   `scripts/verify.ps1`.
@@ -89,7 +91,13 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `4/4 p
 1. ~~**`biome_layer_parity`**~~ **DONE (2026-11-20):** ported the `GenLayer*` stack
    (`mc-worldgen::layer`) + biome metadata; harness green at 4,626 lines (seeds 0/12345/-7, both
    `genBiomes` and the Voronoi `biomeIndexLayer`, positive + negative chunk areas).
-2. **`terrain_parity`** - `ChunkProviderGenerate` base terrain (blocks before decoration).
+2. **`terrain_parity` — surface blocks (next).** `mc-worldgen::terrain` already matches the
+   base-terrain *shape* (`setBlocksInChunk`). Remaining: `replaceBlocksForBiome` /
+   `BiomeGenBase.generateBiomeTerrain` (top/filler + water/ice/bedrock/gravel) and the biome
+   overrides — `BiomeGenHills`, `BiomeGenTaiga`, `BiomeGenSwamp`, `BiomeGenSavanna.Mutated`, and
+   **Mesa's custom clay generator** (`BiomeGenMesa.genTerrainBlocks` + `func_150619_a` +
+   `func_180629_a`). Extend `test_terrain_parity.py` to the full block (id+meta) column.
+   *Done when:* the extended harness is green (line count recorded).
 3. **`worldgen_seed`** - full chunk parity (blocks + metadata + biome + heightmap) = **milestone M1**.
 4. **Deferred:** performance architecture contract + perf harness (benchmark vs Java 1.8.9 +
    OptiFine, instruction/allocation budgets).
@@ -107,6 +115,13 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `4/4 p
   in the two unseeded Zooms (see the comment in `BiomeLayers::new`).
 - Biome/-noise oracles need `net.minecraft.init.Bootstrap.register()` before any `BiomeGenBase`
   static init (touches `Blocks`). Oracle runs drop an empty `logs/` (`gitignore`d).
+- **Headless-world oracle:** `TerrainOracle` builds a real `net.minecraft.world.World` via a tiny
+  subclass (only 2 abstract methods) + stub `ISaveHandler`, `WorldProviderSurface`, and
+  `new WorldInfo(new WorldSettings(seed, GameType.CREATIVE, false, false, WorldType.DEFAULT)
+  .setWorldName(opts), "name")`; `provider.registerWorld(world)` wires the biome manager. This is
+  the reusable route for `provideChunk`/tick/protocol oracles.
+- Biome terrain constants (min/max height, temp, top/filler block id+meta per id incl. mutations)
+  were dumped from the live game; the full table is in `mc-worldgen::terrain`.
 
 ## Session log (append-only)
 
@@ -134,3 +149,11 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `4/4 p
   `GenLayerHills.field_151628_d` is unseeded at its two top Zooms but seeded below (shared with the
   river chain) - confirmed via reflection. **`biome_layer_parity` green (4,626 lines);
   `verify.ps1` green: `4/4 passed`.**
+- **2026-11-20 - session 3 (terrain shape).** Added a headless-`World` oracle pattern
+  (`TerrainOracle`: a tiny `World` subclass + stub `ISaveHandler`, `WorldProviderSurface`,
+  `Bootstrap.register()`), and ported the overworld base-terrain *shape*
+  (`crates/mc-worldgen/src/terrain.rs`: `setBlocksInChunk` + `func_147423_a` density field, the
+  noise stack in vanilla order, `biome_height` table dumped from the game). Added
+  `crates/mc-worldgen/examples/terrain_probe.rs`, `tools/test_terrain_parity.py` (seeds
+  0/12345/-7 × chunks (0,0),(1,-1); one line per (x,z) column, y=0..255), 1 golden test.
+  **`terrain_parity` (shape) green at 1,542 lines; `verify.ps1` green: `5/5 passed`.**
