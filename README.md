@@ -10,7 +10,7 @@ performance. See `plan.md` §16 for the parity policy and Deviation Registry, an
 - Inputs downloaded and verified: 1.8.9 jars, clean vanilla decompile, MCP stable_22, protocol data.
 - Workspace scaffolded (10 crates); `cargo test` and `cargo fmt --check` are green.
 - Parity harnesses green: `random_parity` (3,848 lines) and `noise_parity` (1,047 lines).
-- Next: `worldgen_seed` — same-seed chunk parity (the M1 milestone).
+- Next: the worldgen ladder — `noise_batch` → `biome_layer` → `terrain` → `worldgen_seed` (milestone M1).
 
 ## Layout
 

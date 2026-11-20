@@ -300,6 +300,7 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | Workspace scaffold | `Cargo.toml`, `crates/`, `.cargo/config.toml`, `rust-toolchain.toml` | ✅ 10 crates; `cargo test --workspace` + `cargo fmt --check` pass |
 | First harness | `tools/test_random_parity.py` (+ `oracle/java/src/RandomOracle.java`, `crates/mc-core/examples/random_probe.rs`) | ✅ `random_parity` green: 3,848 lines match `java.util.Random` |
 | Noise | `crates/mc-worldgen/src/noise.rs` + `tools/test_noise_parity.py` (+ `NoiseOracle.java`) | ✅ `noise_parity` green: 1,047 lines match (Improved, Simplex, Perlin, Octaves) |
+| Handoff / repo | `handoff.md`, `AGENTS.md`, `scripts/verify.ps1`, `.gitattributes`, git remote | ✅ pushed to `enthu-ux/rusted_mc` (`main`); `scripts/verify.ps1` runs tests + fmt + parity |
 
 **Notes**
 - The clean vanilla trees are the **primary spec**; the Forge-patched tree at `C:\Users\wassi\Desktop\Minecraft Rust Edition\...` remains a secondary cross-check.
