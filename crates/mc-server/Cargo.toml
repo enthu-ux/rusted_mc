@@ -1,0 +1,14 @@
+[package]
+name = "mc-server"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+mc-core = { workspace = true }
+mc-world = { workspace = true }
+mc-entity = { workspace = true }
+mc-proto = { workspace = true }
+
+[lints]
+workspace = true

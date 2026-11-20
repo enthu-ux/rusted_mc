@@ -1,0 +1,17 @@
+# Intended deviations from vanilla Minecraft 1.8.9.
+# See docs/deviations.md and plan.md section 16.
+#
+# The parity harness treats listed ids as expected; anything not listed must match vanilla.
+# Uncomment and fill in as fixes are decided.
+
+# [[deviation]]
+# id          = "presentation-block-seams"
+# title       = "Remove block model seams / gaps"
+# category    = "presentation"   # presentation | gameplay | stability | security
+# scope       = "client"         # client | server | both
+# default     = "on"             # on | off
+# description = "Blocks render with no thin seams between their faces."
+# rationale   = "Same art, no rendering artifacts."
+# risk        = "Slightly different look at block boundaries; recorded as a visual divergence."
+# test        = "tools/test_render_parity.py"
+# status      = "planned"        # planned | implemented

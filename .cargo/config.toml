@@ -1,0 +1,4 @@
+# Local Windows linker (self-contained MinGW, w64devkit).
+# This is a machine-local absolute path; replace it if the project moves.
+[target.x86_64-pc-windows-gnu]
+linker = "C:/Users/wassi/Desktop/minecraft mods/brainstorming/vendor/tools/w64devkit/w64devkit/bin/gcc.exe"

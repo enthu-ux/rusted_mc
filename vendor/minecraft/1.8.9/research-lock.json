@@ -1,0 +1,71 @@
+﻿{
+    "minecraftVersion":  "1.8.9",
+    "protocol":  47,
+    "downloaded":  "2026-11-20",
+    "source":  "https://launchermeta.mojang.com/mc/game/version_manifest.json",
+    "jars":  {
+                 "client":  {
+                                "file":  "client.jar",
+                                "size":  8461484,
+                                "sha1":  "3870888a6c3d349d3771a3e9d16c9bf5e076b908",
+                                "sha256":  "14f0d96d1a56fb4f5c3b2233d00699525893fe5ce3dcf181e7de59120595d298"
+                            },
+                 "server":  {
+                                "file":  "server.jar",
+                                "size":  8320755,
+                                "sha1":  "b58b2ceb36e01bcd8dbf49c8fb66c55a9f0676cd",
+                                "sha256":  "c18e4245073aaff580eb7359902f0251436568b1647a9e443a924cdb73fa8312"
+                            }
+             },
+    "mappings":  {
+                     "mcp":  "stable_22",
+                     "names":  {
+                                   "file":  "mcp_stable-22.zip",
+                                   "sha256":  "aeed0aaba9d159b7ce60a21e2dcc36adb249fade65ce2f76c730dd0ec7270763"
+                               },
+                     "srg":  {
+                                 "file":  "mcp-1.8.9-srg.zip",
+                                 "sha256":  "ea6fdd37e68569a378fd149b0ab7cfede1de7fa3e794f4ed81f9018366fbdc51",
+                                 "contains":  [
+                                                  "joined.srg",
+                                                  "joined.exc",
+                                                  "exceptor.json",
+                                                  "patches/"
+                                              ]
+                             },
+                     "merged":  {
+                                    "file":  "mappings/joined-mcp.srg",
+                                    "sha256":  "3b064687dea6c4cecf7295e9b245daa9d8b3018710667871349da820ea3dd37f"
+                                }
+                 },
+    "assets":  {
+                   "index":  "1.8",
+                   "file":  "1.8-assets-index.json",
+                   "sha256":  "14e3aa58cf578fd8573985ca96bf075d8be05477be988664a09446c7a76f4142",
+                   "note":  "textures/models/blockstates/lang/shaders are inside client.jar; external sound objects not downloaded yet"
+               },
+    "forgeMdk":  {
+                     "version":  "1.8.9-11.15.1.2318-1.8.9",
+                     "file":  "forge-1.8.9-11.15.1.2318-mdk.zip",
+                     "sha256":  "5a9a798b14676f9f8a5782aced4bbbca30f6ab5bca545fd2d320c356c1a9afae"
+                 },
+    "derived":  {
+                    "remappedClientJar":  "client-mcp.jar",
+                    "remappedServerJar":  "server-mcp.jar",
+                    "decompiledClient":  {
+                                             "path":  "decompiled/vanilla-client",
+                                             "javaFiles":  1612
+                                         },
+                    "decompiledServer":  {
+                                             "path":  "decompiled/vanilla-server",
+                                             "javaFiles":  2941
+                                         },
+                    "forgeReferences":  0
+                },
+    "tools":  {
+                  "vineflower":  "1.12.0",
+                  "jdk":  "21.0.13.1+2",
+                  "specialsource":  "1.11.4-shaded",
+                  "java8":  "1.8.0_492 (Temurin)"
+              }
+}

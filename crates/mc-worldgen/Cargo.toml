@@ -1,0 +1,11 @@
+[package]
+name = "mc-worldgen"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+mc-core = { workspace = true }
+
+[lints]
+workspace = true

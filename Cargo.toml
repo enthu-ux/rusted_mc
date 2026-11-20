@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+
+[workspace.dependencies]
+mc-core     = { path = "crates/mc-core" }
+mc-nbt      = { path = "crates/mc-nbt" }
+mc-proto    = { path = "crates/mc-proto" }
+mc-worldgen = { path = "crates/mc-worldgen" }
+mc-world    = { path = "crates/mc-world" }
+mc-entity   = { path = "crates/mc-entity" }
+mc-server   = { path = "crates/mc-server" }
+mc-client   = { path = "crates/mc-client" }
+mc-render   = { path = "crates/mc-render" }
+mc-assets   = { path = "crates/mc-assets" }
+
+# Scaffold: dependency edges are declared ahead of use, so don't warn on them yet.
+[workspace.lints.cargo]
+unused_dependencies = "allow"
+unused_workspace_dependencies = "allow"
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+lto = "thin"

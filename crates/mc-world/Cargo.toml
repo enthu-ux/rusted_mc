@@ -1,0 +1,13 @@
+[package]
+name = "mc-world"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+mc-core = { workspace = true }
+mc-nbt = { workspace = true }
+mc-worldgen = { workspace = true }
+
+[lints]
+workspace = true

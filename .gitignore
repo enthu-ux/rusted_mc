@@ -1,0 +1,27 @@
+﻿# Local Mojang artifacts and decompiled sources (never commit)
+vendor/minecraft/1.8.9/*.jar
+vendor/minecraft/1.8.9/*.zip
+vendor/minecraft/1.8.9/mappings/
+vendor/minecraft/1.8.9/mcp-srg/
+vendor/minecraft/1.8.9/mcp/
+vendor/minecraft/1.8.9/decompiled/
+vendor/minecraft/1.8.9/forge-mdk/
+
+# Downloaded toolchains / binaries
+vendor/tools/jdk21/
+vendor/tools/w64devkit/
+vendor/tools/*.jar
+vendor/tools/*.zip
+vendor/tools/*.exe
+
+# Third-party reference data
+vendor/reference/
+
+# Vendored Horizon reference (recreate via docs/horizon-reuse.md)
+vendor/horizon/
+
+# Rust build output
+target/
+
+# Local harness working data
+.local/
