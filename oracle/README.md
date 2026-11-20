@@ -4,7 +4,7 @@ Dev-only Forge 1.8.9 driver mod that **only calls** the real game code to produc
 canonical outputs (chunks, ticks, packets, frames) for the Rust harnesses. It is never
 shipped and never patches worldgen/gameplay.
 
-Planned harnesses live in tools/test_<name>_parity.py; the first is random_parity,
-then noise_parity, then worldgen_seed.
+Planned harnesses live in tools/test_<name>_parity.py; so far: random_parity,
+noise_parity, noise_batch_parity, then worldgen_seed.
 
 Uses: vendor/minecraft/1.8.9/forge-mdk/ and the user-owned jars.

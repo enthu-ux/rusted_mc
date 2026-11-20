@@ -44,8 +44,8 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `2/2 passed`
-(`random_parity` 3,848 lines; `noise_parity` 1,047 lines).
+Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `3/3 passed`
+(`random_parity` 3,848 lines; `noise_parity` 1,047 lines; `noise_batch_parity` 369 lines).
 
 ## Environment (mostly local, NOT in git)
 
@@ -70,9 +70,11 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `2/2 p
 - **Inputs:** done. Official 1.8.9 jars (hash-checked), clean vanilla decompile (0 Forge refs),
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
 - **Workspace:** 10 crates scaffolded; `cargo test` + `fmt` green.
-- **Harnesses green:** `random_parity` (3,848 lines), `noise_parity` (1,047 lines).
+- **Harnesses green:** `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
+  `noise_batch_parity` (369 lines).
 - **Implemented:** `mc-core::random` (exact `java.util.Random`); `mc-worldgen::noise`
-  (`Improved`, `Simplex`, `Octaves`, `Perlin`).
+  (`Improved`; `Simplex` incl. 2D batch `func_151606_a`; `Octaves`; `Perlin` incl. batch
+  `func_151600_a`/`func_151599_a`). Golden unit tests: 5 in `mc-worldgen`, 4 in `mc-core`.
 - **Docs/policy:** `plan.md` (sections 1-17), `README.md`, `AGENTS.md`, `docs/PHILOSOPHY.md`,
   `docs/ARCHITECTURE.md`, `docs/deviations.md`, `deviations.toml`, `docs/horizon-reuse.md`,
   `scripts/verify.ps1`.
@@ -80,13 +82,12 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `2/2 p
 
 ## Next steps (prioritized, each with a pass condition)
 
-1. **`noise_batch_parity`** - port `Perlin.func_151599_a`/`func_151600_a` and
-   `Simplex.func_151606_a`; add a Java oracle case + Rust probe case.
-   *Done when:* the harness is green (line count recorded).
-2. **`biome_layer_parity`** - port the `GenLayer*` stack; compare biome ids for a chunk area.
-3. **`terrain_parity`** - `ChunkProviderGenerate` base terrain (blocks before decoration).
-4. **`worldgen_seed`** - full chunk parity (blocks + metadata + biome + heightmap) = **milestone M1**.
-5. **Deferred:** performance architecture contract + perf harness (benchmark vs Java 1.8.9 +
+0. ~~**`noise_batch_parity`**~~ **DONE (2026-11-20):** ported `Perlin.func_151599_a`/`func_151600_a`
+   and `Simplex.func_151606_a`; harness green at 369 lines.
+1. **`biome_layer_parity`** - port the `GenLayer*` stack; compare biome ids for a chunk area.
+2. **`terrain_parity`** - `ChunkProviderGenerate` base terrain (blocks before decoration).
+3. **`worldgen_seed`** - full chunk parity (blocks + metadata + biome + heightmap) = **milestone M1**.
+4. **Deferred:** performance architecture contract + perf harness (benchmark vs Java 1.8.9 +
    OptiFine, instruction/allocation budgets).
 
 ## Open threads / decisions
@@ -106,3 +107,10 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `2/2 p
 - **2026-11-20 - session 1 (handoff + git).** Added the handoff system (`handoff.md`, `AGENTS.md`),
   `scripts/verify.ps1`, `.gitattributes`, `docs/horizon-reuse.md`. Initialized git; remote
   `enthu-ux/rusted_mc`; first push. Fixed a committed 196 MB JDK zip (ignored `*.zip`).
+- **2026-11-20 - session 2 (noise batch).** Ported the batch/array noise paths:
+  `Simplex.func_151606_a` -> `Simplex::populate_noise_array`; `Perlin.func_151600_a`/`func_151599_a`
+  -> `Perlin::generate`/`generate_default` (shared `simplex_dot` helper). Added
+  `oracle/java/src/NoiseBatchOracle.java`, `crates/mc-worldgen/examples/noise_batch_probe.rs`,
+  `tools/test_noise_batch_parity.py`; 3 golden unit tests. **`noise_batch_parity` green (369 lines);
+  `verify.ps1` green: `3/3 passed`.** Existing `noise_parity` (1,047) and `random_parity` (3,848)
+  untouched.

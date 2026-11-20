@@ -79,6 +79,12 @@ fn grad2(i: i32, x: f64, y: f64) -> f64 {
     H[j] * x + I[j] * y
 }
 
+/// `NoiseGeneratorSimplex.func_151604_a`: a gradient vector dotted with a 2D point.
+#[inline]
+fn simplex_dot(gi: usize, x: f64, y: f64) -> f64 {
+    SIMPLEX_GRAD[gi][0] as f64 * x + SIMPLEX_GRAD[gi][1] as f64 * y
+}
+
 /// Port of `NoiseGeneratorImproved`.
 pub struct Improved {
     perm: [i32; 512],
@@ -259,6 +265,9 @@ pub struct Simplex {
     perm: [i32; 512],
     b: f64,
     c: f64,
+    /// Vanilla `field_151610_d`: drawn from the RNG (so the permutation stays aligned)
+    /// but never read by either sampling method.
+    #[allow(dead_code)]
     d: f64,
 }
 
@@ -306,33 +315,109 @@ impl Simplex {
             (self.perm[ii + i1 as usize + self.perm[jj + j1 as usize] as usize] % 12) as usize;
         let gi2 = (self.perm[ii + 1 + self.perm[jj + 1] as usize] % 12) as usize;
 
-        let dot = |gi: usize, xx: f64, yy: f64| {
-            SIMPLEX_GRAD[gi][0] as f64 * xx + SIMPLEX_GRAD[gi][1] as f64 * yy
-        };
-
         let t0 = 0.5 - x0 * x0 - y0 * y0;
         let n0 = if t0 < 0.0 {
             0.0
         } else {
             let t0 = t0 * t0;
-            t0 * t0 * dot(gi0, x0, y0)
+            t0 * t0 * simplex_dot(gi0, x0, y0)
         };
         let t1 = 0.5 - x1 * x1 - y1 * y1;
         let n1 = if t1 < 0.0 {
             0.0
         } else {
             let t1 = t1 * t1;
-            t1 * t1 * dot(gi1, x1, y1)
+            t1 * t1 * simplex_dot(gi1, x1, y1)
         };
         let t2 = 0.5 - x2 * x2 - y2 * y2;
         let n2 = if t2 < 0.0 {
             0.0
         } else {
             let t2 = t2 * t2;
-            t2 * t2 * dot(gi2, x2, y2)
+            t2 * t2 * simplex_dot(gi2, x2, y2)
         };
 
         70.0 * (n0 + n1 + n2)
+    }
+
+    /// `NoiseGeneratorSimplex.func_151606_a`.
+    ///
+    /// Fills an `x_size` × `y_size` grid (row-major, x fastest) from `(x, y)` in steps
+    /// `(x_scale, y_scale)`, ACCUMULATING (`+=`) into `out` like vanilla; the buffer must
+    /// be pre-zeroed by the caller (`Perlin::generate` does).
+    #[allow(clippy::too_many_arguments)]
+    pub fn populate_noise_array(
+        &self,
+        out: &mut Vec<f64>,
+        x: f64,
+        y: f64,
+        x_size: i32,
+        y_size: i32,
+        x_scale: f64,
+        y_scale: f64,
+        scale: f64,
+    ) {
+        let need = (x_size * y_size) as usize;
+        if out.len() < need {
+            out.resize(need, 0.0);
+        }
+
+        let g = 0.5 * (SQRT_3 - 1.0);
+        let h = (3.0 - SQRT_3) / 6.0;
+
+        let mut idx = 0usize;
+        for j in 0..y_size {
+            let yv = (y + j as f64) * y_scale + self.c;
+            for i in 0..x_size {
+                let xv = (x + i as f64) * x_scale + self.b;
+
+                let s = (xv + yv) * g;
+                let ii = to_int(xv + s);
+                let jj = to_int(yv + s);
+                let t = (ii + jj) as f64 * h;
+                let x0 = xv - (ii as f64 - t);
+                let y0 = yv - (jj as f64 - t);
+
+                let (i1, j1) = if x0 > y0 { (1, 0) } else { (0, 1) };
+
+                let x1 = x0 - i1 as f64 + h;
+                let y1 = y0 - j1 as f64 + h;
+                let x2 = x0 - 1.0 + 2.0 * h;
+                let y2 = y0 - 1.0 + 2.0 * h;
+
+                let pi = (ii & 0xFF) as usize;
+                let pj = (jj & 0xFF) as usize;
+                let gi0 = (self.perm[pi + self.perm[pj] as usize] % 12) as usize;
+                let gi1 = (self.perm[pi + i1 as usize + self.perm[pj + j1 as usize] as usize] % 12)
+                    as usize;
+                let gi2 = (self.perm[pi + 1 + self.perm[pj + 1] as usize] % 12) as usize;
+
+                let t0 = 0.5 - x0 * x0 - y0 * y0;
+                let n0 = if t0 < 0.0 {
+                    0.0
+                } else {
+                    let t0 = t0 * t0;
+                    t0 * t0 * simplex_dot(gi0, x0, y0)
+                };
+                let t1 = 0.5 - x1 * x1 - y1 * y1;
+                let n1 = if t1 < 0.0 {
+                    0.0
+                } else {
+                    let t1 = t1 * t1;
+                    t1 * t1 * simplex_dot(gi1, x1, y1)
+                };
+                let t2 = 0.5 - x2 * x2 - y2 * y2;
+                let n2 = if t2 < 0.0 {
+                    0.0
+                } else {
+                    let t2 = t2 * t2;
+                    t2 * t2 * simplex_dot(gi2, x2, y2)
+                };
+
+                out[idx] += 70.0 * (n0 + n1 + n2) * scale;
+                idx += 1;
+            }
+        }
     }
 }
 
@@ -434,6 +519,68 @@ impl Perlin {
         }
         v
     }
+
+    /// `NoiseGeneratorPerlin.func_151600_a`.
+    ///
+    /// Zeroes `out` (whole buffer when it is already large enough, else reallocates) and
+    /// stacks each octave through `Simplex::populate_noise_array`, decaying frequency by
+    /// `freq_mult` and amplitude by `amp_mult` per octave.
+    #[allow(clippy::too_many_arguments)]
+    pub fn generate(
+        &self,
+        out: &mut Vec<f64>,
+        x: f64,
+        y: f64,
+        x_size: i32,
+        y_size: i32,
+        x_scale: f64,
+        y_scale: f64,
+        freq_mult: f64,
+        amp_mult: f64,
+    ) {
+        let need = (x_size * y_size) as usize;
+        if out.len() >= need {
+            for v in out.iter_mut() {
+                *v = 0.0;
+            }
+        } else {
+            out.clear();
+            out.resize(need, 0.0);
+        }
+
+        let mut freq = 1.0;
+        let mut amp = 1.0;
+        for gen in self.generators.iter().take(self.octaves) {
+            gen.populate_noise_array(
+                out,
+                x,
+                y,
+                x_size,
+                y_size,
+                x_scale * freq * amp,
+                y_scale * freq * amp,
+                0.55 / amp,
+            );
+            freq *= freq_mult;
+            amp *= amp_mult;
+        }
+    }
+
+    /// `NoiseGeneratorPerlin.func_151599_a`: `generate` with the amplitude decay fixed at 0.5.
+    #[allow(clippy::too_many_arguments)]
+    pub fn generate_default(
+        &self,
+        out: &mut Vec<f64>,
+        x: f64,
+        y: f64,
+        x_size: i32,
+        y_size: i32,
+        x_scale: f64,
+        y_scale: f64,
+        freq_mult: f64,
+    ) {
+        self.generate(out, x, y, x_size, y_size, x_scale, y_scale, freq_mult, 0.5);
+    }
 }
 
 #[cfg(test)]
@@ -465,5 +612,44 @@ mod tests {
         for (a, b) in first.iter().zip(out.iter()) {
             assert_eq!(*b, *a * 2.0, "buffer should have doubled (accumulated)");
         }
+    }
+
+    /// First three `Simplex.func_151606_a` samples, taken from the 1.8.9 oracle.
+    #[test]
+    fn simplex_batch_golden_seed0() {
+        let mut r = JavaRandom::new(0);
+        let g = Simplex::new(&mut r);
+        let mut out = Vec::new();
+        g.populate_noise_array(&mut out, 1.5, -2.25, 5, 4, 1.0, 1.0, 1.0);
+        assert_eq!(out.len(), 20);
+        assert_eq!(out[0].to_bits(), 0xbfac_d5d8_0a5c_b74a);
+        assert_eq!(out[1].to_bits(), 0x3fc4_df48_7c8f_69df);
+        assert_eq!(out[2].to_bits(), 0x3fd9_7427_cbac_068c);
+    }
+
+    /// First three `Perlin.func_151600_a` samples, taken from the 1.8.9 oracle.
+    #[test]
+    fn perlin_batch_golden_seed0() {
+        let mut r = JavaRandom::new(0);
+        let g = Perlin::new(&mut r, 4);
+        let mut out = Vec::new();
+        g.generate(&mut out, 0.0, 0.0, 5, 5, 1.0, 1.0, 0.5, 0.5);
+        assert_eq!(out.len(), 25);
+        assert_eq!(out[0].to_bits(), 0x3fbb_8974_94b0_fae0);
+        assert_eq!(out[1].to_bits(), 0x3fc7_6c29_e7b5_4d38);
+        assert_eq!(out[2].to_bits(), 0x3fe2_d0be_d6bb_f8ee);
+    }
+
+    /// First three `Perlin.func_151599_a` samples, taken from the 1.8.9 oracle.
+    #[test]
+    fn perlin_default_golden_seed0() {
+        let mut r = JavaRandom::new(0);
+        let g = Perlin::new(&mut r, 8);
+        let mut out = Vec::new();
+        g.generate_default(&mut out, 0.0, 0.0, 5, 5, 1.0, 1.0, 0.5);
+        assert_eq!(out.len(), 25);
+        assert_eq!(out[0].to_bits(), 0x4049_6c41_5096_3ba4);
+        assert_eq!(out[1].to_bits(), 0x4049_7279_e93f_3d34);
+        assert_eq!(out[2].to_bits(), 0x4049_a279_6004_66c3);
     }
 }

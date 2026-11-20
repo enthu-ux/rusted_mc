@@ -164,7 +164,7 @@ Version-agnostic and directly address "don't reinvent the wheel":
 
 1. **Day 1–2:** Get own 1.8.9 client+server jars. Clean vanilla decompile (MCP 1.8.9). Pin hashes in `research-lock.json`. Stand up `check_public_tree`.
 2. **Day 2–4:** `parity.py` skeleton, import NBT/region plumbing, oracle scaffold. **Gate A green: `random_parity`.**
-3. **Day 4–7:** Port noise. **Gate B green: `noise_parity`** (proves the loop end-to-end).
+3. **Day 4–7:** Port noise. **Gate B green: `noise_parity` + `noise_batch_parity`** (proves the loop end-to-end).
 4. **Week 2:** Worldgen skeleton (RNG → noise → biomes → base terrain); wire chunk oracle; iterate **Gate C**.
 
 ### Gate C — `worldgen_seed` (first meaningful milestone)
@@ -300,6 +300,7 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | Workspace scaffold | `Cargo.toml`, `crates/`, `.cargo/config.toml`, `rust-toolchain.toml` | ✅ 10 crates; `cargo test --workspace` + `cargo fmt --check` pass |
 | First harness | `tools/test_random_parity.py` (+ `oracle/java/src/RandomOracle.java`, `crates/mc-core/examples/random_probe.rs`) | ✅ `random_parity` green: 3,848 lines match `java.util.Random` |
 | Noise | `crates/mc-worldgen/src/noise.rs` + `tools/test_noise_parity.py` (+ `NoiseOracle.java`) | ✅ `noise_parity` green: 1,047 lines match (Improved, Simplex, Perlin, Octaves) |
+| Noise (batch) | `crates/mc-worldgen/src/noise.rs` + `tools/test_noise_batch_parity.py` (+ `NoiseBatchOracle.java`) | ✅ `noise_batch_parity` green: 369 lines match (`Perlin.func_151599_a`/`func_151600_a`, `Simplex.func_151606_a`) |
 | Handoff / repo | `handoff.md`, `AGENTS.md`, `scripts/verify.ps1`, `.gitattributes`, git remote | ✅ pushed to `enthu-ux/rusted_mc` (`main`); `scripts/verify.ps1` runs tests + fmt + parity |
 
 **Notes**
