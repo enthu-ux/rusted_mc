@@ -46,8 +46,10 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `2/2 p
   for Vineflower.
 - **Reference:** `vendor/horizon` (commit `0e5055d`, LGPL) - tools, docs, selected crates.
 - **Windows note:** the console mangles non-ASCII in output; the files themselves are fine.
-- **Git:** initialized. `vendor/horizon/`, `vendor/minecraft/`, `vendor/reference/`,
-  `vendor/tools/jdk21|w64devkit|*.jar|*.exe`, `target/`, `.local/` are gitignored.
+- **Git:** initialized and pushed. Remote `origin = https://github.com/enthu-ux/rusted_mc` (branch
+  `main`, identity `enthu-ux <wassimbariza@gmail.com>`). `vendor/horizon/`, `vendor/minecraft/`,
+  `vendor/reference/`, `vendor/tools/jdk21|w64devkit|*.jar|*.zip|*.exe`, `target/`, `.local/` are gitignored.
+  Push a session's work with `git add -A && git commit -m ... && git push`.
 - **Verify:** `scripts/verify.ps1` runs tests + format + all parity harnesses in one command.
 
 ## Current state
