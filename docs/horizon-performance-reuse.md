@@ -5,7 +5,7 @@ renderer/netcode freeze assumptions in. This is the performance companion to
 [`horizon-reuse.md`](horizon-reuse.md) (what the sparse checkout contains).
 
 - Upstream: https://github.com/horizon-rust/horizon (LGPL-3.0; see `vendor/horizon/LICENSE`).
-- Working copy: `vendor/horizon/` (gitignored), currently commit `0e5055d` (2026-11-20).
+- Working copy: `vendor/horizon/` (gitignored), currently commit `2f8e8b7` (2026-11-21).
 - **Re-sync before copying code** (`git -C vendor/horizon fetch --depth 1 origin main && git -C
   vendor/horizon reset --hard FETCH_HEAD`) and record the new commit. The tree moves fast.
 

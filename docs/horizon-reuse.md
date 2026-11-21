@@ -20,7 +20,7 @@ git -C vendor/horizon sparse-checkout set \
 ```
 
 - **Upstream:** https://github.com/horizon-rust/horizon
-- **Commit taken:** `0e5055d` (2026-11-20)
+- **Commit taken:** `2f8e8b7` (2026-11-21)
 - **License:** **LGPL-3.0** (see the working copy's `LICENSE` and `THIRD_PARTY_NOTICES.md`). Reused
   code stays LGPL-3.0: keep it isolated, retain notices, publish modifications to those parts.
 

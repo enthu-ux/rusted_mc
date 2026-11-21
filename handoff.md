@@ -70,7 +70,10 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `6/6 p
 
 - **Inputs:** done. Official 1.8.9 jars (hash-checked), clean vanilla decompile (0 Forge refs),
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
-- **Workspace:** 10 crates scaffolded; `cargo test` + `fmt` green.
+- **Workspace:** 11 crates scaffolded (incl. `mc-perf`); `cargo test` + `fmt` green.
+- **Performance (P0):** `docs/performance-contract.md` (budgets/methodology) + `docs/performance-baselines.md`;
+  `mc-perf` (spans/`Stats`, zero-dep) + `tools/perf_baseline.py`; first base-terrain baseline
+  (Rust 1.35 ms/chunk vs Java 3.63 ms/chunk, caveated).
 - **Harnesses green:** `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
   `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines), `terrain_parity`
   (16,191 lines; full base terrain: shape + surface blocks), `math_parity` (492 lines).
@@ -87,6 +90,11 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `6/6 p
 - **Repo:** pushed to `github.com/enthu-ux/rusted_mc` (`main`).
 
 ## Next steps (prioritized, each with a pass condition)
+
+**P0 — performance foundation (in progress).** Done: `vendor/horizon` re-synced to `2f8e8b7`; the
+performance contract (`docs/performance-contract.md`); `mc-perf` + `tools/perf_baseline.py` + first
+chunk-gen baseline. Next: adopt `horizon-threads`/`horizon-system` (mimalloc) when the first binary
+exists; add spans to hot paths; Java client/server FPS/RAM + startup/join baselines.
 
 0. ~~**`noise_batch_parity`**~~ **DONE (2026-11-20):** ported `Perlin.func_151599_a`/`func_151600_a`
    and `Simplex.func_151606_a`; harness green at 369 lines.
@@ -205,3 +213,10 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `6/6 p
   phased plan) and linked it from `plan.md`, `docs/horizon-reuse.md`, `handoff.md`. Honest finding:
   we reuse **no Horizon runtime code yet**; P0 (contract + measurement + allocator/system) comes
   after M1 worldgen.
+- **2026-11-21 - session 6 (P0 start).** Re-synced `vendor/horizon` to `2f8e8b7`. Wrote
+  `docs/performance-contract.md` (two-gate budgets, methodology, LGPL placement) and
+  `docs/performance-baselines.md`. Added `mc-perf` (dependency-free spans + `Stats`) with tests,
+  and `tools/perf_baseline.py` + `terrain_bench.rs` / `TerrainBench.java`. First baseline:
+  Rust base terrain **1.35 ms/chunk** vs Java 1.8.9 **3.63 ms/chunk** (~2.7x; Rust is
+  base-terrain-only vs Java `provideChunk`, so caveated). Next P0: allocator/system (mimalloc)
+  when a binary exists, spans in hot paths, Java client/server + startup/join baselines.

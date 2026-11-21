@@ -130,7 +130,7 @@ Rules every ported module must satisfy:
 ## 8. Repo Layout
 
 ```
-crates/    mc-core mc-nbt mc-proto mc-worldgen mc-world mc-entity
+crates/    mc-core mc-perf mc-nbt mc-proto mc-worldgen mc-world mc-entity
            mc-server mc-client mc-render mc-assets
 vendor/    horizon/ = shallow sparse clone of reusable paths (LGPL-3.0) + REUSE-NOTES.md
 oracle/    Java 1.8.9 driver mod + harnesses (never shipped)

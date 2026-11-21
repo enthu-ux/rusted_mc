@@ -8,6 +8,7 @@ edition = "2021"
 
 [workspace.dependencies]
 mc-core     = { path = "crates/mc-core" }
+mc-perf     = { path = "crates/mc-perf" }
 mc-nbt      = { path = "crates/mc-nbt" }
 mc-proto    = { path = "crates/mc-proto" }
 mc-worldgen = { path = "crates/mc-worldgen" }
