@@ -117,6 +117,13 @@ Rules every ported module must satisfy:
 - **Allocation policy:** **zero allocations in hot paths per tick** (tick, meshing inner loop, packet codec inner loop).
 - **Integer parity:** `i32` matches Java `int`; use **wrapping** arithmetic where Java overflows (Rust debug panics where Java wraps).
 - **Exact Java semantics where observable:** `java.util.Random` LCG + rejection sampling, `MathHelper` sin/cos table, `Math.atan2`/`sqrt`, `ChunkPos` hashing, and Java `HashMap` iteration order (Horizon had to reimplement it — expect the same).
+- **Lighting engine (clean rewrite; values parity-gated):** 1.8.9's lighting (`World`/`Chunk`/
+  `NibbleArray` flood fill, whole-chunk `generateSkylightMap`, heightmap invalidation) is a known
+  hot spot. Rewrite it data-oriented: packed nibble sky/block-light planes per section, incremental
+  queued propagation, cached heightmaps, **no per-tick allocation**, and parallel relight of
+  independent regions (propose-parallel / commit-serial). **Light levels and update results stay
+  bit-identical** (`light_parity`); any *rendered* change (smoothing, AO, coloured light) is a
+  presentation deviation, off by default.
 - **Threading model:** the **tick is deterministic and single-threaded**; parallelism goes to rendering, meshing, lighting, I/O. Any parallel phase must be provably order-independent (propose-parallel / commit-serial + digest).
 - **Perf budgets per module** (examples): ≤ X µs per entity tick, ≤ N allocations per tick, mesh a section in < X ms, tick under 50 ms at N players.
 
@@ -201,6 +208,9 @@ Version-agnostic and directly address "don't reinvent the wheel":
   This is an internal API swap, not a player-visible change: the **render harness still gates the
   pixels** (same art, no glitches), so it needs no Deviation Registry entry (cf. §17 "performance
   internals may differ").
+- **Lighting:** **rewrite** the engine, don't port 1.8.9's (packed nibble SoA, incremental queue,
+  cached heightmaps, parallel relight). Light **values** are parity-gated by `light_parity`; only
+  rendered-light changes would be presentation deviations (off by default). See §7.
 
 ### Performance targets
 
@@ -359,7 +369,7 @@ default (on|off), description, rationale, risk, parity-harness test, status
 
 ### 16.5 Seed candidates to classify
 
-- **Presentation:** model seams/gaps, z-fighting, texture/mipmap bleeding.
+- **Presentation:** model seams/gaps, z-fighting, texture/mipmap bleeding, lighting seams / light-update artifacts.
 - **Stability:** crashes, leaks, chunk-corruption paths.
 - **Security:** packet / auth / chat exploits.
 - **Gameplay (decide per-dup):** TNT / carpet / rail duping — enumerate each and choose; default **keep** unless registered.

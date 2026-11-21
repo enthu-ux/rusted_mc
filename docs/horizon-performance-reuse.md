@@ -102,7 +102,14 @@ assets. This is the launch-time lever (not the game loop).
 rewrite the packet set for protocol 47. `horizon-bots` → adapt for M2 join tests.
 `horizon-java-properties` → `server.properties`.
 
-### 8) Do **not** take (26.3-specific)
+### 8) Lighting — rewrite, not reuse
+
+Horizon's `horizon-client-render/src/light.rs` is 26.3 (different light model and propagation). We
+**do not take it**. 1.8.9's own lighting is a known hot spot, so we rewrite the engine: packed
+nibble SoA planes, incremental queue, cached heightmaps, parallel relight (propose/commit). Light
+values are parity-gated by `light_parity`. Only the data-oriented *patterns* are borrowed.
+
+### 9) Do **not** take (26.3-specific)
 
 Worldgen math (`horizon-core/{density,carving,noise,biome}`, `horizon-world/worldgen/`), 26.3
 lighting, block models/datapacks/mods, protocol 777 packets, 26.3 redstone/AI/physics semantics,

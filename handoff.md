@@ -106,7 +106,9 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `6/6 p
    scattered feature / ocean monument); (c) decoration (`BiomeDecorator` + the feature generators);
    (d) heightmap + biome array. *Done when:* the full chunk (blocks + metadata + biome + heightmap)
    matches for the Gate-C seeds/chunks.
-4. **Deferred:** performance architecture contract + perf harness (benchmark vs Java 1.8.9 +
+4. **`light_parity`** - sky/block light arrays after edits match 1.8.9, with the engine **rewritten**
+   for performance (see plan.md §7/§13). Starts once `mc-world` chunks exist.
+5. **Deferred:** performance architecture contract + perf harness (benchmark vs Java 1.8.9 +
    OptiFine, instruction/allocation budgets).
 
 ## Open threads / decisions
@@ -123,6 +125,10 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `6/6 p
   + phased adoption. Today we reuse **no Horizon runtime code**; **P0** = perf architecture contract
   + measurement baseline + `horizon-threads` allocator/system, to land before M3 (does not block M1).
   Re-sync `vendor/horizon` (currently `0e5055d`) before copying any code.
+- **Lighting (decided):** clean rewrite for performance (packed SoA nibbles, incremental queue,
+  cached heightmaps, parallel relight); light **values** parity-gated by `light_parity`. Rendered-light
+  changes (smoothing/AO/colour) would be presentation deviations, off by default (plan §7/§13,
+  `docs/ARCHITECTURE.md`).
 - **Biome-layer gotcha (verified by reflection):** `GenLayerHills.field_151628_d`'s two top `Zoom`
   nodes are never seeded (`GenLayerHills` doesn't override `initWorldGenSeed`), so they keep
   `worldGenSeed = 0`; the `RiverInit`/base chain beneath them is shared with the river chain and

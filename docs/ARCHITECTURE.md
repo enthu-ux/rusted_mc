@@ -23,4 +23,12 @@ Rendering targets **Vulkan via `wgpu`** (Horizon's `gfx` device layer) — **not
 The API swap is internal: parity is judged on **pixels** by the render harness, so it is not a
 registered deviation. GPU culling / indirect draws / device layer come from `vendor/horizon`.
 
+## Lighting engine
+
+A clean rewrite, **not** a port of 1.8.9's `World`/`Chunk`/`NibbleArray` flood fill. Data-oriented:
+packed nibble sky/block-light planes per section, incremental queued propagation, cached
+heightmaps, zero per-tick allocation, and parallel relight of independent regions
+(propose-parallel / commit-serial). Light **levels** stay bit-identical (`light_parity`); any
+rendered-light change (smoothing/AO/colour) is a presentation deviation, off by default.
+
 See plan.md sections 6-7 for the production line and the architecture contract.
