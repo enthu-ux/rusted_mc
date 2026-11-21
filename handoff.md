@@ -45,10 +45,10 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass (54 unit tests); `py tools/parity.py` reports
-`9/9 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
+Expected today: `cargo test` and `fmt` pass (60 unit tests); `py tools/parity.py` reports
+`10/10 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
 `biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 492; `caves_parity` 46,260;
-`worldgen_parity` 7,770; `structures_parity` 2,702).
+`worldgen_parity` 7,770; `structures_parity` 2,702; `jhash_parity` 16 orders / 301 keys).
 
 `tools/perf_baseline.py` is **manual** (not part of `verify`): it builds release binaries, runs the
 Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `MC_SPANS=1`,
@@ -83,7 +83,9 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   **1.35 ms/chunk** vs Java 1.8.9 **3.63 ms/chunk** (~2.7x; caveated - Rust is base-terrain-only vs
   Java `provideChunk`). P0 remainder needs a running binary.
 - **Implemented:** `mc-core::random` (exact `java.util.Random`); `mc-core::jmath` (`MathHelper`
-  sin/cos table + floor/clamp/denormalize); `mc-worldgen::noise` (`Improved`; `Simplex` incl. 2D
+  sin/cos table + floor/clamp/denormalize); `mc-core::jhash` (`java.util.HashMap` iteration order:
+  spread hash, doubling resize, `treeifyBin` early resize, `Integer`/`Long` hash codes);
+  `mc-worldgen::noise` (`Improved`; `Simplex` incl. 2D
   batch `func_151606_a`; `Octaves`; `Perlin` incl. batch `func_151600_a`/`func_151599_a`);
   `mc-worldgen::layer` (full `GenLayer*` biome stack + metadata); `mc-worldgen::terrain` (full
   overworld base terrain: `setBlocksInChunk` + `func_147423_a` + `replaceBlocksForBiome`, incl.
@@ -104,8 +106,8 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 - Harnesses green: `random_parity`, `noise_parity`, `noise_batch_parity`, `biome_layer_parity`,
   `terrain_parity` (full base terrain), `math_parity`, `caves_parity` (caves + ravines),
   `worldgen_parity` (canonical chunk: blocks + biome array + height map),
-  `structures_parity` (mineshaft layout).
-  Unit tests: 38 `mc-worldgen`, 6 `mc-core`, 10 `mc-perf`.
+  `structures_parity` (mineshaft layout), `jhash_parity` (`java.util.HashMap` iteration order).
+  Unit tests: 38 `mc-worldgen`, 12 `mc-core`, 10 `mc-perf`.
 - Notable vanilla quirks encoded: `GenLayerHills.field_151628_d` unseeded top Zooms; Mesa cache
   `Random(0)` + `func_150619_a` orange-loop `+2` step; `ChunkPrimer` x/z transposition in
   `generateBiomeTerrain`; caves and ravines reach biomes through the **biome cache** (index
@@ -139,7 +141,26 @@ layouts (b2) in the meantime.** P0's remaining items need a running binary.
    -> `ItemBook.getItemEnchantability() == 1` -> `mapEnchantmentData` (a `HashMap<Integer,
    EnchantmentData>` whose *iteration order* feeds `WeightedRandom.getRandomItem`) plus the
    enchantment registry. A mineshaft makes roughly 5-10 such rolls, so this is not a rare branch, and
-   those draws shift the rest of the chunk's block placement. Porting it means porting enchantments
+   those draws shift the rest of the chunk's block placement.
+
+   **Unblocking sequence (in progress):**
+   1a. ✅ `mc-core::jhash` - `java.util.HashMap` iteration order (spread hash, doubling resize,
+   `treeifyBin`'s early resize, `Integer`/`Long` hash codes), parity-gated by `jhash_parity`. This is
+   the piece the enchantment map needs.
+   1b. **next:** loot + enchantment RNG - `WeightedRandom.getRandomItem`, `WeightedRandomChestContent`
+   (+ the 13-entry mineshaft weight list and `func_177629_a`), `Enchantment` table (id/weight/
+   min-max level/applicability - dump it from the game like `BlockTableOracle`), then
+   `EnchantmentHelper.buildEnchantmentList` + `mapEnchantmentData`. Harness: an oracle that runs the
+   real `generateChestContents` over fixed seeds and prints the *random stream afterwards*
+   (e.g. the next 32 `nextInt` values), so the draw sequence is compared, not the items.
+   1c. mineshaft placement (`StructureComponent` helpers + the four `addComponentParts` bodies),
+   the `populate` oracle (design below) and the block harness.
+   1d. the other structures' layouts (village / stronghold / scattered / monument / nether bridge);
+   then decoration (`BiomeDecorator` + feature generators - biggest). Then the full chunk (blocks +
+   metadata + biome + heightmap) for the Gate-C seeds/chunks is reachable and `worldgen_parity` can
+   take the Gate-C name.
+   *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
+   and chunks. Porting it means porting enchantments
    (weights/levels per item) **and** Java `HashMap` iteration order for `Integer` keys - i.e. the
    `plan.md` §7 "expect to reimplement Java HashMap order" item. Sequenced properly: (1) loot tables +
    `WeightedRandomChestContent` (pure arrays, order-independent), (2) enchantment registry + a
@@ -227,12 +248,19 @@ layouts (b2) in the meantime.** P0's remaining items need a running binary.
   layout corpus always has `hps=0`; villages/strongholds/scattered features/monuments and the nether
   bridge are unported; a chunk's `structureMap` is `HashMap`-ordered in vanilla, so the dump sorts by
   chunk coordinate (never rely on map order).
-- **Java `HashMap` iteration order is a live parity dependency (two places so far):**
-  `MapGenStructure.structureMap` (two starts meeting one chunk -> whose pieces draw from the shared
-  `populate` rand first) and `EnchantmentHelper.mapEnchantmentData` (chest book enchantments). Both are
-  deterministic per JVM but implementation-defined; porting them needs a modelled `java.util.HashMap`
-  iteration order - the `plan.md` §7 item Horizon also had to reimplement. Until then, structure
-  *placement* corpora must use chunks with a single intersecting start.
+- **Java `HashMap` iteration order is a live parity dependency:** `mc-core::jhash` models it
+  (verified: 16 insertion orders / 301 keys, including the `treeifyBin` early resize at the 9th
+  colliding key). Two consumers:
+  - `EnchantmentHelper.mapEnchantmentData` (Integer ids 0..35, cap 64, no bin ever reaches 8) - fully
+    modelled, and this is the one that decides chest-book draws;
+  - `MapGenStructure.structureMap` (Long chunk keys) - **only single-start chunks are well defined.**
+    With two starts meeting a chunk, vanilla's iteration order depends on the map's whole history
+    (how many chunks the world ever generated, hence capacity/treeification), so it is *not* a
+    function of (seed, chunk): two worlds with the same seed but different exploration orders can
+    place those chunks differently. Consequence: structure placement corpora use single-start
+    chunks; our port keeps a deterministic (chunk-coordinate) order and does **not** try to
+    replicate the history-dependent case. Actual treeification (8+ entries in a bin at capacity
+    >= 64) is deliberately not modelled (`jhash.rs` documents it).
 - **Loot/enchantment dependency for placement:** `StructureMineshaftPieces.Corridor` rolls a chest
   twice per section (≈5-10 per mineshaft) and the roll consumes enchantment RNG before anything else
   (`Items.enchanted_book.getRandom` -> `buildEnchantmentList` -> `mapEnchantmentData`). Chest *contents*
@@ -384,3 +412,14 @@ layouts (b2) in the meantime.** P0's remaining items need a running binary.
   `populate` rand in `structureMap.values()` order, so placement corpora must use single-start chunks.
   Recorded the sequencing and the ready-to-build populate-oracle design in "Next steps"/"Open
   threads". Tree left clean; nothing committed beyond session 9.
+- **2026-11-22 - session 11 (unblocking: Java HashMap order).** Chose the parity-first path. Added
+  `mc-core::jhash` (`JavaHashMap`: OpenJDK 8 spread hash, 16/0.75 doubling resize with lo/hi order
+  preserved, `treeifyBin`'s early resize, `Integer`/`Long` hash codes) with 6 unit tests, plus
+  `HashOrderOracle.java` + `jhash_probe.rs` + `tools/test_jhash_parity.py`: **16 insertion orders /
+  301 keys match** the real `HashMap` (`keySet()` order). The harness immediately caught a real
+  semantic miss: a run of colliding keys resizes earlier than `size > threshold`, because `putVal`
+  calls `treeifyBin` first and with a table of 16/32 that *resizes* instead of treeifying (the 9th
+  colliding entry triggers it). Also established (and recorded above) that multi-start chunk
+  placement is history-dependent in vanilla, so only the enchantment map needs full order parity.
+  `verify.ps1`: **10/10**, 60 tests. Next session: 1b (loot + enchantment RNG), then 1c (placement +
+  populate oracle).

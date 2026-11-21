@@ -330,6 +330,7 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | Caves/ravines | `crates/mc-worldgen/src/cave.rs` + `tools/test_caves_parity.py` (+ `CaveOracle.java`) | ✅ `caves_parity` green: 46,260 lines match (`MapGenBase` + `MapGenCaves` + `MapGenRavine`, caves/ravines/both/base) |
 | Chunk artefacts | `crates/mc-worldgen/src/chunk.rs` + `tools/test_worldgen_parity.py` (+ `WorldgenOracle.java`) | ✅ `worldgen_parity` green: 7,770 lines match (blocks + biome array + height map; pre-decoration chunk) |
 | Mineshafts (layout) | `crates/mc-worldgen/src/structure/` (mod + `mineshaft.rs`) + `tools/test_structures_parity.py` (+ `StructuresOracle.java`) | ✅ `structures_parity` green: 2,702 lines match (starts + pieces + boxes; block placement pending) |
+| Java HashMap order | `crates/mc-core/src/jhash.rs` + `tools/test_jhash_parity.py` (+ `HashOrderOracle.java`) | ✅ `jhash_parity` green: 16 insertion orders / 301 keys match `keySet()` order (unblocks chest-enchantment RNG) |
 | Block table | `oracle/java/src/BlockTableOracle.java` → `chunk::light_opacity` | ✅ dumped from the live game (opacity per block id + material-air set) |
 | Math | `crates/mc-core/src/jmath.rs` + `tools/test_math_parity.py` (+ `MathOracle.java`) | ✅ `math_parity` green: 492 lines match (`MathHelper` sin/cos table + floor/clamp helpers) |
 | Perf substrate | `crates/mc-perf` + `docs/performance-contract.md` + `tools/perf_baseline.py` | ✅ P0: contract + spans/`Stats`/alloc/`work`; baseline recorded |
