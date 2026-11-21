@@ -180,6 +180,12 @@ Version-agnostic and directly address "don't reinvent the wheel":
 - Dump blocks + metadata + biome + heightmap canonically; hash.
 - **Pass:** `python tools/parity.py worldgen_seed` exits 0, **0 mismatched chunks**; on failure, names the **first differing block coordinate**.
 
+**Staged.** Structures and decoration are not ported yet and both change blocks, so the Gate-C name
+stays reserved for the final chunk. `worldgen_parity` (`tools/test_worldgen_parity.py`) currently
+pins blocks + metadata + biome + heightmap for the **pre-decoration** `provideChunk` output on these
+same seeds/chunks (plus cave/ravine/mesa/ocean fixtures), with a signal guard and
+first-differing-coordinate reporting; it becomes the Gate-C harness as structures/decoration land.
+
 ## 12. Risks & Mitigations
 
 | Risk | Mitigation |
@@ -320,6 +326,8 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | Biome layers | `crates/mc-worldgen/src/layer.rs` + `tools/test_biome_layer_parity.py` (+ `BiomeLayerOracle.java`) | ✅ `biome_layer_parity` green: 4,626 lines match (full `GenLayer*` stack; default overworld) |
 | Terrain | `crates/mc-worldgen/src/terrain.rs` + `tools/test_terrain_parity.py` (+ `TerrainOracle.java`) | ✅ `terrain_parity` green: 16,191 lines match (full base terrain: shape + surface, incl. Mesa) |
 | Caves/ravines | `crates/mc-worldgen/src/cave.rs` + `tools/test_caves_parity.py` (+ `CaveOracle.java`) | ✅ `caves_parity` green: 46,260 lines match (`MapGenBase` + `MapGenCaves` + `MapGenRavine`, caves/ravines/both/base) |
+| Chunk artefacts | `crates/mc-worldgen/src/chunk.rs` + `tools/test_worldgen_parity.py` (+ `WorldgenOracle.java`) | ✅ `worldgen_parity` green: 7,770 lines match (blocks + biome array + height map; pre-decoration chunk) |
+| Block table | `oracle/java/src/BlockTableOracle.java` → `chunk::light_opacity` | ✅ dumped from the live game (opacity per block id + material-air set) |
 | Math | `crates/mc-core/src/jmath.rs` + `tools/test_math_parity.py` (+ `MathOracle.java`) | ✅ `math_parity` green: 492 lines match (`MathHelper` sin/cos table + floor/clamp helpers) |
 | Perf substrate | `crates/mc-perf` + `docs/performance-contract.md` + `tools/perf_baseline.py` | ✅ P0: contract + spans/`Stats`/alloc/`work`; baseline recorded |
 | Handoff / repo | `handoff.md`, `AGENTS.md`, `scripts/verify.ps1`, `.gitattributes`, git remote | ✅ pushed to `enthu-ux/rusted_mc` (`main`); `scripts/verify.ps1` runs tests + fmt + parity |

@@ -48,7 +48,7 @@ Per-module budgets (set from measured baselines; `TBD` = filled when the harness
 |---|---|---|
 | Server tick | ms/tick @ 50 players | ≤ 50 (hard); p99 recorded |
 | Worldgen | ms/chunk (base terrain, no caves) | baseline recorded (§6); target set from it |
-| Worldgen | ms/chunk (base terrain + caves + ravines) | measured: +0.29 ms over base (`docs/performance-baselines.md`) |
+| Worldgen | ms/chunk (full pass: base + caves + ravines + artefacts) | measured: +0.37 ms carving, +0.06 ms artefacts (`docs/performance-baselines.md`) |
 | Worldgen | allocations/chunk (hot path) | 0 after warm scratch |
 | Meshing | ms/section | TBD (M3) |
 | Meshing | allocations/section (inner loop) | 0 |

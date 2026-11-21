@@ -3,6 +3,7 @@
 //! See `docs/ARCHITECTURE.md` and `plan.md` for the two gates (parity + performance).
 
 pub mod cave;
+pub mod chunk;
 pub mod layer;
 pub mod noise;
 pub mod terrain;

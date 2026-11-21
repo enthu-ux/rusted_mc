@@ -23,20 +23,25 @@ Rust/Java median ratio: **0.371×** (≈2.7× faster).
 the biome array and the skylight map. So this is a starting reference, **not** a fair M1
 comparison. Re-measure once the Rust side reaches feature parity (`worldgen_seed`).
 
-## Carve passes (caves + ravines), per chunk — 2026-11-22
+## Canonical chunk (blocks + biome + height map), per chunk — 2026-11-22
 
 `cargo run -q --release -p mc-worldgen --example carve_bench` (8 chunks × 3 seeds × 5 iterations,
-release, in-process; same machine as above). No Java counterpart yet, so no ratio.
+release, in-process; same machine). Every row is `TerrainGen::generate_chunk`, which now also builds
+the canonical artefacts (biome array + height map); `terrain_bench` / `generate_base_chunk` remains
+blocks-only, so the base-terrain baseline above is unchanged. No Java counterpart yet, no ratio.
 
 | pass | median (ms) | p95 (ms) | max (ms) |
 |---|---:|---:|---:|
-| base terrain (`GenOptions::none`) | 1.3090 | 1.9838 | 2.4105 |
-| + caves | 1.6208 | 2.2038 | 2.8751 |
-| + caves + ravines | 1.5963 | 2.5975 | 3.4205 |
+| base terrain + artefacts (`GenOptions::none`) | 1.5828 | 3.0664 | 7.1551 |
+| + caves | 1.8111 | 3.6016 | 5.4359 |
+| + caves + ravines | 1.9490 | 3.5028 | 6.8443 |
 
-`mc-perf` spans (mean per call): `worldgen.chunk` 1.4481, `worldgen.shape` 1.0947,
-`worldgen.surface` 0.2196, `worldgen.caves` 0.2161, `worldgen.ravines` 0.0559 ms.
+`mc-perf` spans (mean per call): `worldgen.chunk` 1.7577, `worldgen.shape` 1.3162,
+`worldgen.surface` 0.2776, `worldgen.caves` 0.2474, `worldgen.ravines` 0.0623,
+`worldgen.artifacts` 0.0561 ms.
 
-Carving costs ≈ **+0.29 ms/chunk** over the base pass (≈ +22%); the full pass stays well under the
-recorded Java `provideChunk` median (3.63 ms, which includes caves). Not a gate yet: the reference
-server's chunk-generation budget is set once a running binary can measure it.
+Reading: carving ≈ **+0.37 ms/chunk**, artefact build ≈ **0.06 ms/chunk** (`worldgen.artifacts`).
+Run-to-run spread on this dev box is roughly ±20%, so treat the deltas as indicative until the
+reference-server benchmark exists; the full pass stays well under the recorded Java `provideChunk`
+median (3.63 ms, which includes caves). Not a gate yet: the reference server's chunk-generation
+budget is set once a running binary can measure it.

@@ -40,7 +40,7 @@ fn main() {
     let mut out = String::new();
     for &mode in &modes {
         for &(cx, cz) in &chunks {
-            let primer = gen.generate_chunk(cx, cz, options(mode));
+            let primer = gen.generate_chunk(cx, cz, options(mode)).blocks;
             out.push_str(&format!("seed {seed} mode {mode} chunk {cx} {cz}\n"));
             for x in 0..16usize {
                 for z in 0..16usize {

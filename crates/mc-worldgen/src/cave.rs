@@ -744,7 +744,7 @@ mod tests {
     #[test]
     fn caves_carve_stone_to_air() {
         let mut gen = TerrainGen::new(0);
-        let primer = gen.generate_chunk(-169, 30, GenOptions::vanilla());
+        let primer = gen.generate_chunk(-169, 30, GenOptions::vanilla()).blocks;
         assert_eq!(primer[idx(15, 15, 34)], AIR);
     }
 
@@ -752,7 +752,7 @@ mod tests {
     #[test]
     fn caves_carve_grass_to_air() {
         let mut gen = TerrainGen::new(0);
-        let primer = gen.generate_chunk(-3, 0, GenOptions::vanilla());
+        let primer = gen.generate_chunk(-3, 0, GenOptions::vanilla()).blocks;
         assert_eq!(primer[idx(0, 14, 67)], AIR);
     }
 
@@ -760,7 +760,7 @@ mod tests {
     #[test]
     fn caves_leave_bedrock() {
         let mut gen = TerrainGen::new(0);
-        let primer = gen.generate_chunk(-169, 30, GenOptions::vanilla());
+        let primer = gen.generate_chunk(-169, 30, GenOptions::vanilla()).blocks;
         assert_eq!(primer[idx(0, 0, 0)], 7 << 4);
     }
 
@@ -769,7 +769,7 @@ mod tests {
     #[test]
     fn caves_flood_below_y11_with_lava() {
         let mut gen = TerrainGen::new(0);
-        let primer = gen.generate_chunk(-124, -128, GenOptions::vanilla());
+        let primer = gen.generate_chunk(-124, -128, GenOptions::vanilla()).blocks;
         assert_eq!(primer[idx(4, 8, 10)], 11 << 4);
     }
 
@@ -778,7 +778,7 @@ mod tests {
     #[test]
     fn caves_replace_sand_with_sandstone() {
         let mut gen = TerrainGen::new(-7);
-        let primer = gen.generate_chunk(-1, 0, GenOptions::vanilla());
+        let primer = gen.generate_chunk(-1, 0, GenOptions::vanilla()).blocks;
         assert_eq!(primer[idx(12, 13, 64)], 24 << 4);
     }
 
@@ -787,7 +787,7 @@ mod tests {
     #[test]
     fn caves_rewrite_floor_to_biome_top_block() {
         let mut gen = TerrainGen::new(0);
-        let primer = gen.generate_chunk(-3, 0, GenOptions::vanilla());
+        let primer = gen.generate_chunk(-3, 0, GenOptions::vanilla()).blocks;
         assert_eq!(primer[idx(14, 0, 63)], 2 << 4);
     }
 
@@ -795,7 +795,7 @@ mod tests {
     #[test]
     fn ravines_carve_stone_to_air() {
         let mut gen = TerrainGen::new(0);
-        let primer = gen.generate_chunk(-5, 1, GenOptions::vanilla());
+        let primer = gen.generate_chunk(-5, 1, GenOptions::vanilla()).blocks;
         assert_eq!(primer[idx(0, 11, 22)], AIR);
     }
 
@@ -807,7 +807,7 @@ mod tests {
             caves: false,
             ravines: true,
         };
-        let primer = gen.generate_chunk(-5, 1, ravines);
+        let primer = gen.generate_chunk(-5, 1, ravines).blocks;
         assert_eq!(primer[idx(0, 11, 22)], AIR);
     }
 
@@ -816,7 +816,7 @@ mod tests {
     #[test]
     fn ravines_flood_below_y11_with_flowing_lava() {
         let mut gen = TerrainGen::new(0);
-        let primer = gen.generate_chunk(-7, 7, GenOptions::vanilla());
+        let primer = gen.generate_chunk(-7, 7, GenOptions::vanilla()).blocks;
         assert_eq!(primer[idx(4, 3, 10)], 10 << 4);
     }
 
@@ -824,7 +824,7 @@ mod tests {
     #[test]
     fn carving_off_matches_base_terrain() {
         let mut gen = TerrainGen::new(0);
-        let full = gen.generate_chunk(7, -5, GenOptions::none());
+        let full = gen.generate_chunk(7, -5, GenOptions::none()).blocks;
         let base = gen.generate_base_chunk(7, -5);
         assert_eq!(full, base);
     }

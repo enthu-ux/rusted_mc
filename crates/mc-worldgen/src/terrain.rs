@@ -10,6 +10,7 @@
 //! are stamped as `id << 4 | meta`, indexed `x << 12 | z << 8 | y` (vanilla's quirks included).
 
 use crate::cave::{Caves, Ravines};
+use crate::chunk::{self, GeneratedChunk};
 use crate::layer::BiomeLayers;
 use crate::noise::{Octaves, Perlin};
 use mc_core::random::JavaRandom;
@@ -497,21 +498,35 @@ impl TerrainGen {
         self.base_and_surface(chunk_x, chunk_z).0
     }
 
-    /// `ChunkProviderGenerate.provideChunk`: base terrain, surface replacement, then the selected
-    /// carving passes (structures are not ported yet).
-    pub fn generate_chunk(&mut self, chunk_x: i32, chunk_z: i32, opts: GenOptions) -> Vec<u16> {
-        let (mut primer, biomes) = self.base_and_surface(chunk_x, chunk_z);
+    /// `ChunkProviderGenerate.provideChunk`: base terrain, surface replacement, the selected
+    /// carving passes (structures are not ported yet), then the canonical chunk artefacts
+    /// (biome array + height map).
+    pub fn generate_chunk(
+        &mut self,
+        chunk_x: i32,
+        chunk_z: i32,
+        opts: GenOptions,
+    ) -> GeneratedChunk {
+        let (mut primer, biome_ids) = self.base_and_surface(chunk_x, chunk_z);
         if opts.caves {
             let _span = mc_perf::span("worldgen.caves");
             self.caves
-                .generate(self.seed, chunk_x, chunk_z, &mut primer, &biomes);
+                .generate(self.seed, chunk_x, chunk_z, &mut primer, &biome_ids);
         }
         if opts.ravines {
             let _span = mc_perf::span("worldgen.ravines");
             self.ravines
-                .generate(self.seed, chunk_x, chunk_z, &mut primer, &biomes);
+                .generate(self.seed, chunk_x, chunk_z, &mut primer, &biome_ids);
         }
-        primer
+
+        let _span = mc_perf::span("worldgen.artifacts");
+        let height_map = chunk::height_map(&primer);
+        let biomes = chunk::biome_array(&biome_ids);
+        GeneratedChunk {
+            blocks: primer,
+            biomes,
+            height_map,
+        }
     }
 
     /// `provideChunk` steps 1-4, returning the primer and the generation biome array.

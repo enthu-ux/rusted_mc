@@ -45,9 +45,10 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass (38 unit tests); `py tools/parity.py` reports
-`7/7 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
-`biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 492; `caves_parity` 46,260).
+Expected today: `cargo test` and `fmt` pass (45 unit tests); `py tools/parity.py` reports
+`8/8 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
+`biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 492; `caves_parity` 46,260;
+`worldgen_parity` 7,770).
 
 `tools/perf_baseline.py` is **manual** (not part of `verify`): it builds release binaries, runs the
 Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `MC_SPANS=1`,
@@ -87,7 +88,9 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   `mc-worldgen::layer` (full `GenLayer*` biome stack + metadata); `mc-worldgen::terrain` (full
   overworld base terrain: `setBlocksInChunk` + `func_147423_a` + `replaceBlocksForBiome`, incl.
   Hills/Taiga/Swamp/Savanna.Mutated/Mesa); `mc-worldgen::cave` (`MapGenBase` + `MapGenCaves` +
-  `MapGenRavine`, wired into `TerrainGen::generate_chunk(cx, cz, GenOptions)`); `mc-perf`.
+  `MapGenRavine`, wired into `TerrainGen::generate_chunk(cx, cz, GenOptions)`);
+  `mc-worldgen::chunk` (canonical chunk artefacts: biome array + height map, `light_opacity`
+  table); `mc-perf`.
 - **Docs/policy:** `plan.md` (§1-17), `README.md`, `AGENTS.md`, `docs/PHILOSOPHY.md`,
   `docs/ARCHITECTURE.md`, `docs/deviations.md`, `deviations.toml`, `docs/horizon-reuse.md`,
   `docs/horizon-performance-reuse.md`, `docs/performance-contract.md`, `docs/performance-baselines.md`,
@@ -97,26 +100,31 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 ## Done so far (parity + perf)
 
 - Harnesses green: `random_parity`, `noise_parity`, `noise_batch_parity`, `biome_layer_parity`,
-  `terrain_parity` (full base terrain), `math_parity`, `caves_parity` (caves + ravines).
-  Unit tests: 20 `mc-worldgen`, 6 `mc-core`, 10 `mc-perf`.
+  `terrain_parity` (full base terrain), `math_parity`, `caves_parity` (caves + ravines),
+  `worldgen_parity` (canonical chunk: blocks + biome array + height map).
+  Unit tests: 29 `mc-worldgen`, 6 `mc-core`, 10 `mc-perf`.
 - Notable vanilla quirks encoded: `GenLayerHills.field_151628_d` unseeded top Zooms; Mesa cache
   `Random(0)` + `func_150619_a` orange-loop `+2` step; `ChunkPrimer` x/z transposition in
   `generateBiomeTerrain`; caves and ravines reach biomes through the **biome cache** (index
   `x + z*16`) while the surface pass reads the same array transposed (`z + x*16`); caves fill below
   y=11 with `Blocks.lava` (id 11) but ravines with `Blocks.flowing_lava` (id 10), and caves strip
-  the meta off the replaced floor (`topBlock.getBlock().getDefaultState()`) where ravines keep it.
+  the meta off the replaced floor (`topBlock.getBlock().getDefaultState()`) where ravines keep it;
+  the chunk **biome array** is a *linear* copy of that same (non-transposed) array, and
+  `Chunk.generateSkylightMap` (not the primer constructor) builds the **height map** by scanning for
+  the highest block with `getLightOpacity() != 0` (so water/ice count, lava and snow layers do not).
 
 ## Next steps (prioritized, each with a pass condition)
 
-**Recommended next: `worldgen_seed` — the full chunk serializer (biome array + heightmap).** P0's
-remaining items need a running binary, so they wait.
+**Recommended next: structures (M1 increment (b)).** P0's remaining items need a running binary.
 
 1. **`worldgen_seed` — M1 (in progress).** `mc-core::jmath` + `math_parity` done; base terrain done;
-   caves + ravines done (`cave.rs` + `caves_parity`). Remaining increments:
-   (a) ✅ `MapGenCaves` + `MapGenRavine`; (b) structures (mineshaft / village / stronghold / scattered
-   feature / ocean monument); (c) decoration (`BiomeDecorator` + the feature generators - biggest);
-   (d) **next:** the canonical chunk serializer - biome array + heightmap - so `worldgen_seed` can
-   compare `blocks + metadata + biome + heightmap` as one artefact.
+   caves + ravines done (`cave.rs` + `caves_parity`); canonical chunk artefacts done (`chunk.rs` +
+   `worldgen_parity`: biome array + height map, pre-decoration chunk). Remaining increments:
+   (a) ✅ `MapGenCaves` + `MapGenRavine`; (b) **next:** structures (mineshaft / village / stronghold /
+   scattered feature / ocean monument) - each is its own `MapGen*` + harness; (c) decoration
+   (`BiomeDecorator` + the feature generators - biggest); then the full chunk (blocks + metadata +
+   biome + heightmap) for the Gate-C seeds/chunks becomes reachable and `worldgen_parity` can take the
+   Gate-C name.
    *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
    and chunks.
 2. **`light_parity`** - sky/block light arrays after edits match 1.8.9, with the engine **rewritten**
@@ -171,6 +179,13 @@ remaining items need a running binary, so they wait.
   plain sand). Both are transcribed and pinned by a spec unit test
   (`mesa_floor_top_block_differs_between_caves_and_ravines`), but no corpus chunk reaches them.
   Mesa chunks with a cave-carved grass floor would close the gap.
+- **Height map / biome array notes:** `chunk::light_opacity` and the material-air set are dumped from
+  the live game by `BlockTableOracle` (re-run it if the block set changes). The height map is built by
+  `Chunk.generateSkylightMap`, i.e. it is `1 +` the highest block with `getLightOpacity() != 0`
+  (water/ice are opaque-ish, lava/snow layers are not); `heightMapMinimum` and the skylight/block-light
+  arrays are **not** ported yet (they belong to `light_parity`). `worldgen_parity` therefore compares
+  the **pre-decoration** `provideChunk` chunk; Gate C (`worldgen_seed`) waits for structures +
+  decoration, which change blocks.
 
 ## Session log (append-only)
 
@@ -263,3 +278,19 @@ remaining items need a running binary, so they wait.
   Coverage gaps recorded: ravine top-block writes and mesa cave floors are transcribed but not in the
   corpus. (A throwaway fixture-hunting script was over-provisioned and OOM-killed; replaced with a
   streaming version - nothing else was affected.)
+- **2026-11-22 - session 8 (canonical chunk: biome array + height map).** Added
+  `crates/mc-worldgen/src/chunk.rs`: `GeneratedChunk { blocks, biomes, height_map }`, returned by
+  `TerrainGen::generate_chunk` (so `generate_base_chunk` stays blocks-only for `terrain_parity` and
+  the base-terrain baseline). Ported the tail of `provideChunk`: the biome array is a *linear* copy of
+  the generation biome ids (`(byte) biomesForGeneration[i].biomeID`, index `x + z*16` - which also
+  pins the layout the cave biome lookup relies on), and the height map is `Chunk.generateSkylightMap`'s
+  scan for the highest `getLightOpacity() != 0` block. Opacity/material tables were dumped from the
+  live game with a new `BlockTableOracle` (the block registry is *defaulted to air*, so unregistered
+  ids must be skipped - a first dump silently listed 198-255 as air). New harness `worldgen_parity`
+  (`WorldgenOracle.java` + `worldgen_probe.rs` + `tools/test_worldgen_parity.py`): Gate-C seeds/chunks
+  + cave/ravine/mesa/ocean fixtures, blocks + biome + heightmap = **7,770 lines match**, with a
+  per-seed vacuity guard (heights must have relief with min >= 1; biomes must not be constant) and
+  per-artefact first-coordinate reporting (verified with a negative self-test). 7 new golden unit
+  tests (**45 total**). `verify.ps1`: **8/8**. `worldgen_parity` covers the *pre-decoration* chunk;
+  Gate C's `worldgen_seed` is reserved until structures + decoration land (noted in `plan.md`).
+  Re-measured the perf table: carving +0.37 ms/chunk, artefacts +0.06 ms (`worldgen.artifacts`).
