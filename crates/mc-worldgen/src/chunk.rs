@@ -23,6 +23,8 @@
 //!
 //! Skylight/block-light *values* are not part of this artefact (see `light_parity`).
 
+use crate::structure::StructureStart;
+
 /// The result of a full `provideChunk` pass.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GeneratedChunk {
@@ -32,6 +34,10 @@ pub struct GeneratedChunk {
     pub biomes: Vec<u8>,
     /// `Chunk.heightMap` - 256 values, index `z << 4 | x` (`Chunk.getHeightValue(x, z)`).
     pub height_map: Vec<i32>,
+    /// Structure starts registered by `provideChunk` whose box meets this chunk: the set
+    /// `MapGenStructure.generateStructure` will write while populating it. Vanilla keeps them in
+    /// the generator's `structureMap`, not in the chunk, so this is the port's view of that state.
+    pub structures: Vec<StructureStart>,
 }
 
 #[inline]

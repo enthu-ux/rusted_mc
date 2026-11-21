@@ -27,15 +27,24 @@ fn main() {
         [6, 5],
     ];
     let opts = [
-        ("base ", GenOptions::none()),
+        ("base  ", GenOptions::none()),
         (
-            "caves",
+            "caves ",
             GenOptions {
                 caves: true,
-                ravines: false,
+                ..GenOptions::none()
             },
         ),
-        ("both ", GenOptions::vanilla()),
+        (
+            "+ravin",
+            GenOptions {
+                caves: true,
+                ravines: true,
+                ..GenOptions::none()
+            },
+        ),
+        // Structures only *register* during `provideChunk`; their blocks come from `populate`.
+        ("+mines", GenOptions::vanilla()),
     ];
     let iters = 5;
 

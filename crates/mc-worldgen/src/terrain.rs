@@ -13,6 +13,7 @@ use crate::cave::{Caves, Ravines};
 use crate::chunk::{self, GeneratedChunk};
 use crate::layer::BiomeLayers;
 use crate::noise::{Octaves, Perlin};
+use crate::structure::mineshaft::Mineshaft;
 use mc_core::random::JavaRandom;
 use std::f64::consts::PI;
 
@@ -369,6 +370,7 @@ pub struct TerrainGen {
     seed: i64,
     caves: Caves,
     ravines: Ravines,
+    mineshafts: Mineshaft,
     lower_gen: Octaves,
     upper_gen: Octaves,
     main_gen: Octaves,
@@ -433,6 +435,7 @@ impl TerrainGen {
             seed,
             caves: Caves::new(),
             ravines: Ravines::new(),
+            mineshafts: Mineshaft::new(),
             lower_gen,
             upper_gen,
             main_gen,
@@ -460,27 +463,32 @@ impl TerrainGen {
 }
 
 /// Which passes of `ChunkProviderGenerate.provideChunk` run after the surface replacement.
-/// Structures are not implemented yet, so they are always off.
+/// Decoration (`populate`) is not ported yet.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct GenOptions {
     pub caves: bool,
     pub ravines: bool,
+    /// `useMineShafts && mapFeaturesEnabled` - registers mineshaft starts (their blocks are written
+    /// later, in `populate`).
+    pub mineshafts: bool,
 }
 
 impl GenOptions {
-    /// `useCaves = false`, `useRavines = false` (base terrain only).
+    /// `useCaves = false`, `useRavines = false`, structures off (base terrain only).
     pub fn none() -> GenOptions {
         GenOptions {
             caves: false,
             ravines: false,
+            mineshafts: false,
         }
     }
 
-    /// `ChunkProviderSettings.Factory` defaults.
+    /// `ChunkProviderSettings.Factory` defaults with `mapFeaturesEnabled = true`.
     pub fn vanilla() -> GenOptions {
         GenOptions {
             caves: true,
             ravines: true,
+            mineshafts: true,
         }
     }
 }
@@ -499,8 +507,8 @@ impl TerrainGen {
     }
 
     /// `ChunkProviderGenerate.provideChunk`: base terrain, surface replacement, the selected
-    /// carving passes (structures are not ported yet), then the canonical chunk artefacts
-    /// (biome array + height map).
+    /// carving passes, structure registration, then the canonical chunk artefacts (biome array +
+    /// height map).
     pub fn generate_chunk(
         &mut self,
         chunk_x: i32,
@@ -518,14 +526,21 @@ impl TerrainGen {
             self.ravines
                 .generate(self.seed, chunk_x, chunk_z, &mut primer, &biome_ids);
         }
+        if opts.mineshafts {
+            let _span = mc_perf::span("worldgen.mineshafts");
+            self.mineshafts
+                .generate(self.seed, chunk_x, chunk_z, SEA_LEVEL);
+        }
 
         let _span = mc_perf::span("worldgen.artifacts");
         let height_map = chunk::height_map(&primer);
         let biomes = chunk::biome_array(&biome_ids);
+        let structures = self.mineshafts.starts_intersecting(chunk_x, chunk_z);
         GeneratedChunk {
             blocks: primer,
             biomes,
             height_map,
+            structures,
         }
     }
 

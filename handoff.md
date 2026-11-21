@@ -45,10 +45,10 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass (45 unit tests); `py tools/parity.py` reports
-`8/8 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
+Expected today: `cargo test` and `fmt` pass (54 unit tests); `py tools/parity.py` reports
+`9/9 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
 `biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 492; `caves_parity` 46,260;
-`worldgen_parity` 7,770).
+`worldgen_parity` 7,770; `structures_parity` 2,702).
 
 `tools/perf_baseline.py` is **manual** (not part of `verify`): it builds release binaries, runs the
 Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `MC_SPANS=1`,
@@ -90,7 +90,9 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   Hills/Taiga/Swamp/Savanna.Mutated/Mesa); `mc-worldgen::cave` (`MapGenBase` + `MapGenCaves` +
   `MapGenRavine`, wired into `TerrainGen::generate_chunk(cx, cz, GenOptions)`);
   `mc-worldgen::chunk` (canonical chunk artefacts: biome array + height map, `light_opacity`
-  table); `mc-perf`.
+  table); `mc-worldgen::mapgen` (`MapGenBase` driver, shared by the carve passes and structures);
+  `mc-worldgen::structure` (`StructureStart`/`Piece`/`BoundingBox` model + `mineshaft.rs`:
+  `MapGenMineshaft` registration and the whole piece layout); `mc-perf`.
 - **Docs/policy:** `plan.md` (§1-17), `README.md`, `AGENTS.md`, `docs/PHILOSOPHY.md`,
   `docs/ARCHITECTURE.md`, `docs/deviations.md`, `deviations.toml`, `docs/horizon-reuse.md`,
   `docs/horizon-performance-reuse.md`, `docs/performance-contract.md`, `docs/performance-baselines.md`,
@@ -101,8 +103,9 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 - Harnesses green: `random_parity`, `noise_parity`, `noise_batch_parity`, `biome_layer_parity`,
   `terrain_parity` (full base terrain), `math_parity`, `caves_parity` (caves + ravines),
-  `worldgen_parity` (canonical chunk: blocks + biome array + height map).
-  Unit tests: 29 `mc-worldgen`, 6 `mc-core`, 10 `mc-perf`.
+  `worldgen_parity` (canonical chunk: blocks + biome array + height map),
+  `structures_parity` (mineshaft layout).
+  Unit tests: 38 `mc-worldgen`, 6 `mc-core`, 10 `mc-perf`.
 - Notable vanilla quirks encoded: `GenLayerHills.field_151628_d` unseeded top Zooms; Mesa cache
   `Random(0)` + `func_150619_a` orange-loop `+2` step; `ChunkPrimer` x/z transposition in
   `generateBiomeTerrain`; caves and ravines reach biomes through the **biome cache** (index
@@ -115,16 +118,18 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 ## Next steps (prioritized, each with a pass condition)
 
-**Recommended next: structures (M1 increment (b)).** P0's remaining items need a running binary.
+**Recommended next: mineshaft block placement (structures, M1 increment (b), part 2).** P0's
+remaining items need a running binary.
 
 1. **`worldgen_seed` — M1 (in progress).** `mc-core::jmath` + `math_parity` done; base terrain done;
    caves + ravines done (`cave.rs` + `caves_parity`); canonical chunk artefacts done (`chunk.rs` +
-   `worldgen_parity`: biome array + height map, pre-decoration chunk). Remaining increments:
-   (a) ✅ `MapGenCaves` + `MapGenRavine`; (b) **next:** structures (mineshaft / village / stronghold /
-   scattered feature / ocean monument) - each is its own `MapGen*` + harness; (c) decoration
-   (`BiomeDecorator` + the feature generators - biggest); then the full chunk (blocks + metadata +
-   biome + heightmap) for the Gate-C seeds/chunks becomes reachable and `worldgen_parity` can take the
-   Gate-C name.
+   `worldgen_parity`); mineshaft **layout** done (`structure/` + `structures_parity`). Remaining:
+   (b1) **next:** mineshaft **block placement** (`StructureStart.generateStructure` /
+   `addComponentParts`), which needs the `populate` oracle (below) and gives decorations their
+   infrastructure too; (b2) the other structures (village / stronghold / scattered feature / ocean
+   monument); (c) decoration (`BiomeDecorator` + feature generators - biggest). Then the full chunk
+   (blocks + metadata + biome + heightmap) for the Gate-C seeds/chunks is reachable and
+   `worldgen_parity` can take the Gate-C name.
    *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
    and chunks.
 2. **`light_parity`** - sky/block light arrays after edits match 1.8.9, with the engine **rewritten**
@@ -186,6 +191,28 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   arrays are **not** ported yet (they belong to `light_parity`). `worldgen_parity` therefore compares
   the **pre-decoration** `provideChunk` chunk; Gate C (`worldgen_seed`) waits for structures +
   decoration, which change blocks.
+- **Structure phases (important):** `provideChunk` only *registers* structures
+  (`MapGenBase.generate` -> `MapGenStructure.recursiveGenerate` -> `canSpawnStructureAtCoords` ->
+  `getStructureStart`); **no blocks are written**. Blocks come from `populate` ->
+  `MapGenStructure.generateStructure` -> `StructureStart.generateStructure` ->
+  `StructureComponent.addComponentParts`, which writes through `world.setBlockState`. Populate uses a
+  *different* RNG stream (`rand.setSeed(worldSeed)`, then two `nextLong()/2*2+1` draws, then
+  `x*a + z*b ^ seed`), so layout and placement are independently testable.
+- **Populate oracle (needed for b1/decoration, design):** `world.setBlockState` needs a world that can
+  hold chunks, so the headless world needs a stub `IChunkProvider` that stores chunks generated by a
+  `ChunkProviderGenerate` (and `populate` must be driven explicitly, as `ChunkProviderServer` does).
+  `Chunk.setBlockState` also touches the height map and skylight/relight queues, so the final artifact
+  will include those (another reason to pair it with `light_parity`).
+- **Mineshaft layout quirks (found by the harness):** `EnumFacing.getHorizontalIndex()` is
+  *not* declaration order (`SOUTH 0, WEST 1, NORTH 2, EAST 3`) - it is written to NBT as `O`/`D`;
+  `Cross`'s constructor never sets `coordBaseMode`, so its `O` is always -1 while its own `D` holds
+  the direction; `func_175890_b` forwards its *own* `var1` (the root Room) down the recursion, so the
+  `+/-80` window test always measures from the root; `Cross`/`Corridor` bounding-box helpers draw RNG
+  (`nextInt(4)` / `nextInt(3)+2`+loop) *before* the intersection test.
+- **Structure coverage gaps:** `spawnerPlaced` (`hps`) is only ever set during block placement, so the
+  layout corpus always has `hps=0`; villages/strongholds/scattered features/monuments and the nether
+  bridge are unported; a chunk's `structureMap` is `HashMap`-ordered in vanilla, so the dump sorts by
+  chunk coordinate (never rely on map order).
 
 ## Session log (append-only)
 
@@ -294,3 +321,22 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   tests (**45 total**). `verify.ps1`: **8/8**. `worldgen_parity` covers the *pre-decoration* chunk;
   Gate C's `worldgen_seed` is reserved until structures + decoration land (noted in `plan.md`).
   Re-measured the perf table: carving +0.37 ms/chunk, artefacts +0.06 ms (`worldgen.artifacts`).
+- **2026-11-22 - session 9 (mineshaft registration + layout).** Split `MapGenBase` into
+  `mc-worldgen::mapgen` (shared driver; `cave.rs` now uses it) and added `mc-worldgen::structure`
+  (`StructureStart`/`Piece`/`PieceKind`/`BoundingBox` + `mineshaft.rs`): `MapGenStructure`
+  registration (neighbourhood walk, discard `nextInt()`, `canSpawnStructureAtCoords`), the root Room
+  and the whole `StructureMineshaftPieces` layout (`createPiece` dispatch, Corridor/Cross/Room/Stairs
+  bounding boxes and `buildComponent` recursion), plus `markAvailableHeight`. Wire-up:
+  `GenOptions.mineshafts`, `GeneratedChunk.structures` (the starts meeting the chunk, sorted), and a
+  `worldgen.mineshafts` span. New harness `structures_parity` (`StructuresOracle.java` +
+  `structures_probe.rs` + `tools/test_structures_parity.py`) dumps vanilla's *own* structure NBT
+  (`writeStructureComponentsToNBT`) and compares: **2,702 lines match** (3 seeds x 14 chunks, 21
+  starts, up to 188 pieces each), with a per-seed "at least one start" guard. The harness caught three
+  real transcription bugs on the way (`getHorizontalIndex` order, NBT key sort order, `Cross`'s null
+  `coordBaseMode`). 9 new unit tests (**54 total**). Oracle notes: the headless world needs
+  `mapStorage = new MapStorage(handler)` because `World` leaves it null (only `WorldServer` builds
+  it); structure blocks are *not* written here - that is `populate`, next. `verify.ps1`: **9/9**
+  (`structures_parity` auto-discovered by `parity.py`). Perf: re-ran `carve_bench` (now with a
+  `+mineshafts` row); the dev box was loaded, so only the spans were recorded
+  (`worldgen.mineshafts` 0.05-0.08 ms/chunk) and the median table was left as-is, per the contract's
+  "discard loaded runs" rule.

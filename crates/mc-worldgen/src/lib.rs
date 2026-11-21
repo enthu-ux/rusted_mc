@@ -5,5 +5,7 @@
 pub mod cave;
 pub mod chunk;
 pub mod layer;
+pub mod mapgen;
 pub mod noise;
+pub mod structure;
 pub mod terrain;

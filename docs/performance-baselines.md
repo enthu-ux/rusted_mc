@@ -35,13 +35,19 @@ blocks-only, so the base-terrain baseline above is unchanged. No Java counterpar
 | base terrain + artefacts (`GenOptions::none`) | 1.5828 | 3.0664 | 7.1551 |
 | + caves | 1.8111 | 3.6016 | 5.4359 |
 | + caves + ravines | 1.9490 | 3.5028 | 6.8443 |
+| + mineshaft registration (`GenOptions::vanilla`) | not recorded | - | - |
 
-`mc-perf` spans (mean per call): `worldgen.chunk` 1.7577, `worldgen.shape` 1.3162,
+`mc-perf` spans (mean per call, the same run): `worldgen.chunk` 1.7577, `worldgen.shape` 1.3162,
 `worldgen.surface` 0.2776, `worldgen.caves` 0.2474, `worldgen.ravines` 0.0623,
 `worldgen.artifacts` 0.0561 ms.
 
 Reading: carving ≈ **+0.37 ms/chunk**, artefact build ≈ **0.06 ms/chunk** (`worldgen.artifacts`).
-Run-to-run spread on this dev box is roughly ±20%, so treat the deltas as indicative until the
-reference-server benchmark exists; the full pass stays well under the recorded Java `provideChunk`
-median (3.63 ms, which includes caves). Not a gate yet: the reference server's chunk-generation
-budget is set once a running binary can measure it.
+Run-to-run spread on this dev box is roughly ±20% (a loaded machine moved the base row by 60% with no
+code change, so those runs are discarded per `docs/performance-contract.md` §1), so treat the deltas
+as indicative until the reference-server benchmark exists; the full pass stays well under the
+recorded Java `provideChunk` median (3.63 ms, which includes caves). Not a gate yet.
+
+**Mineshaft registration** adds `worldgen.mineshafts`: 0.0500–0.0794 ms/chunk across the two loaded
+runs above - it walks the same 17x17 neighbourhood but only builds piece trees for chunks that pass
+`canSpawnStructureAtCoords` (p ≈ 0.004 once `max(|x|,|z|) >= 80`). Re-record the whole table on a
+quiet machine when the next feature lands.

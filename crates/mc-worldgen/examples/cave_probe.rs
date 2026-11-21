@@ -16,6 +16,7 @@ fn options(mode: u32) -> GenOptions {
     GenOptions {
         caves: mode == 0 || mode == 2,
         ravines: mode == 1 || mode == 2,
+        ..GenOptions::none()
     }
 }
 

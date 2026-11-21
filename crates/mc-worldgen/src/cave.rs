@@ -18,10 +18,8 @@ use mc_core::jmath;
 use mc_core::random::JavaRandom;
 use std::f32::consts::{FRAC_PI_2, PI};
 
+use crate::mapgen::{self, RANGE};
 use crate::terrain::biome_top_filler;
-
-/// `MapGenBase.range`.
-const RANGE: i32 = 8;
 
 // Block ids (states are `id << 4 | meta`).
 const ID_STONE: u16 = 1;
@@ -82,30 +80,6 @@ fn biome_top_block_default(biome: i32) -> u16 {
     biome_top_filler(biome).0 & !15
 }
 
-/// `MapGenBase.generate`: reseed, draw the two chunk-mix constants, then visit the neighbourhood.
-fn map_gen_base<F>(
-    world_seed: i64,
-    rand: &mut JavaRandom,
-    target_x: i32,
-    target_z: i32,
-    primer: &mut [u16],
-    biomes: &[i32],
-    mut recursive: F,
-) where
-    F: FnMut(&mut JavaRandom, i32, i32, i32, i32, &mut [u16], &[i32]),
-{
-    rand.set_seed(world_seed);
-    let a = rand.next_long();
-    let b = rand.next_long();
-
-    for nx in target_x - RANGE..=target_x + RANGE {
-        for nz in target_z - RANGE..=target_z + RANGE {
-            rand.set_seed((nx as i64).wrapping_mul(a) ^ (nz as i64).wrapping_mul(b) ^ world_seed);
-            recursive(rand, nx, nz, target_x, target_z, primer, biomes);
-        }
-    }
-}
-
 /// `MapGenCaves`. (`MapGenBase` state is only the RNG, reseeded per call.)
 pub struct Caves {
     rand: JavaRandom,
@@ -133,15 +107,10 @@ impl Caves {
         primer: &mut [u16],
         biomes: &[i32],
     ) {
-        map_gen_base(
-            world_seed,
-            &mut self.rand,
-            target_x,
-            target_z,
-            primer,
-            biomes,
-            caves_recursive_generate,
-        );
+        let rand = &mut self.rand;
+        mapgen::generate(world_seed, rand, target_x, target_z, |rand, nx, nz| {
+            caves_recursive_generate(rand, nx, nz, target_x, target_z, primer, biomes);
+        });
     }
 }
 
@@ -489,15 +458,10 @@ impl Ravines {
         primer: &mut [u16],
         biomes: &[i32],
     ) {
-        map_gen_base(
-            world_seed,
-            &mut self.rand,
-            target_x,
-            target_z,
-            primer,
-            biomes,
-            ravines_recursive_generate,
-        );
+        let rand = &mut self.rand;
+        mapgen::generate(world_seed, rand, target_x, target_z, |rand, nx, nz| {
+            ravines_recursive_generate(rand, nx, nz, target_x, target_z, primer, biomes);
+        });
     }
 }
 
@@ -806,6 +770,7 @@ mod tests {
         let ravines = GenOptions {
             caves: false,
             ravines: true,
+            ..GenOptions::none()
         };
         let primer = gen.generate_chunk(-5, 1, ravines).blocks;
         assert_eq!(primer[idx(0, 11, 22)], AIR);
