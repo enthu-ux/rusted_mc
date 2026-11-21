@@ -15,6 +15,16 @@ Paste this first:
 End a session with **"I will continue in a new session"** - that triggers this doc's update and a
 commit/push.
 
+## At a glance
+
+- **Milestone:** M1 `worldgen_seed` (in progress). Parity-gated so far: base terrain, caves/ravines,
+  the canonical chunk (biome array + height map), mineshaft **layout**, and `java.util.HashMap` order.
+  **Structure/decoration blocks are not ported yet** - blocked on the loot/enchantment RNG
+  (`Next steps` #1b/#1c below).
+- **Next increment:** `1b` loot + enchantment RNG (`mc-core::jhash` is already in place), then `1c`
+  mineshaft placement + the `populate` oracle, then `1d` the other structures' layouts.
+- **Baseline:** `scripts/verify.ps1` -> **10/10** harnesses, **60** unit tests, fmt clean.
+
 ---
 
 ## Read first (context)
@@ -76,7 +86,7 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 - **Inputs:** done. Official 1.8.9 jars (hash-checked), clean vanilla decompile (0 Forge refs),
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
-- **Workspace:** 11 crates; `cargo test` + `fmt` green.
+- **Workspace:** 11 crates; `cargo test` + `fmt` green (10/10 harnesses, 60 tests).
 - **Performance (P0 substrate done):** `docs/performance-contract.md` + `docs/performance-baselines.md`;
   `mc-perf` (zero-dep: opt-in spans, `Stats`, `work::par_chunks_mut`, `alloc::CountingAllocator`) +
   `tools/perf_baseline.py`; spans on the worldgen hot path. First baseline: Rust base terrain
@@ -423,3 +433,7 @@ layouts (b2) in the meantime.** P0's remaining items need a running binary.
   placement is history-dependent in vanilla, so only the enchantment map needs full order parity.
   `verify.ps1`: **10/10**, 60 tests. Next session: 1b (loot + enchantment RNG), then 1c (placement +
   populate oracle).
+- **2026-11-22 - session 11 (handoff + git).** Rewrote the at-a-glance/status sections, refreshed
+  `README.md` (it still listed six harnesses) and confirmed the baseline: **10/10** harnesses, 60
+  tests, fmt clean. **Next session: `1b` loot + enchantment RNG, then `1c` mineshaft placement +
+  the `populate` oracle.** Committed and pushed.

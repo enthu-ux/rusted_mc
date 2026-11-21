@@ -8,13 +8,17 @@ performance. See `plan.md` §16 for the parity policy and Deviation Registry, an
 ## Status
 
 - Inputs downloaded and verified: 1.8.9 jars, clean vanilla decompile, MCP stable_22, protocol data.
-- Workspace scaffolded (11 crates); `cargo test` and `cargo fmt --check` are green.
-- Parity harnesses green: `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
-  `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines), `terrain_parity`
-  (16,191 lines; full overworld base terrain) and `math_parity` (492 lines).
+- Workspace scaffolded (11 crates); `cargo test` and `cargo fmt --check` are green (60 tests).
+- Parity harnesses green (10): `random_parity`, `noise_parity`, `noise_batch_parity`,
+  `biome_layer_parity`, `terrain_parity` (full overworld base terrain), `math_parity`,
+  `caves_parity` (caves + ravines), `worldgen_parity` (canonical chunk: blocks + biome + height map),
+  `structures_parity` (mineshaft layout: starts + pieces + boxes), `jhash_parity`
+  (`java.util.HashMap` iteration order).
 - Performance (P0 substrate): `mc-perf` + `docs/performance-contract.md` / `docs/performance-baselines.md`
-  (Rust 1.35 ms/chunk vs Java 1.8.9 3.63 ms/chunk, caveated).
-- Next: `worldgen_seed` / M1 — caves + ravines, structures, decoration, heightmap/biome array.
+  (base terrain Rust 1.35 ms/chunk vs Java 1.8.9 3.63 ms/chunk, caveated; per-stage spans recorded).
+- Next: structure/decoration **blocks** - loot + enchantment RNG, then mineshaft placement +
+  the `populate` oracle, then the other structures. See `handoff.md` for the exact sequencing and
+  the known blockers.
 
 ## Layout
 
