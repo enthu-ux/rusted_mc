@@ -8,16 +8,18 @@ performance. See `plan.md` §16 for the parity policy and Deviation Registry, an
 ## Status
 
 - Inputs downloaded and verified: 1.8.9 jars, clean vanilla decompile, MCP stable_22, protocol data.
-- Workspace scaffolded (10 crates); `cargo test` and `cargo fmt --check` are green.
+- Workspace scaffolded (11 crates); `cargo test` and `cargo fmt --check` are green.
 - Parity harnesses green: `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
   `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines), `terrain_parity`
   (16,191 lines; full overworld base terrain) and `math_parity` (492 lines).
+- Performance (P0 substrate): `mc-perf` + `docs/performance-contract.md` / `docs/performance-baselines.md`
+  (Rust 1.35 ms/chunk vs Java 1.8.9 3.63 ms/chunk, caveated).
 - Next: `worldgen_seed` / M1 — caves + ravines, structures, decoration, heightmap/biome array.
 
 ## Layout
 
 ```
-crates/   mc-core mc-nbt mc-proto mc-worldgen mc-world mc-entity
+crates/   mc-core mc-perf mc-nbt mc-proto mc-worldgen mc-world mc-entity
           mc-server mc-client mc-render mc-assets
 oracle/   Java 1.8.9 driver mod + harnesses (never shipped)
 tools/    parity / port ledger / bench tooling

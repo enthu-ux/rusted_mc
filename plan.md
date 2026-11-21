@@ -313,13 +313,14 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | Protocol/block/item data | `../reference/minecraft-data/data/pc/1.8/` | ✅ `protocol.json`, `blocks.json`, `items.json`, `biomes.json`, `entities.json`, recipes, etc. |
 | Toolchain | `vendor/tools/`, system | ✅ Rust 1.100.0 (GNU) + w64devkit GCC 16.2, Vineflower 1.12.0, JDK 21.0.13.1+2, SpecialSource 1.11.4-shaded |
 | Java 8 | system | ✅ Temurin 1.8.0_492 (for 1.8.9 server/Forge) |
-| Workspace scaffold | `Cargo.toml`, `crates/`, `.cargo/config.toml`, `rust-toolchain.toml` | ✅ 10 crates; `cargo test --workspace` + `cargo fmt --check` pass |
+| Workspace scaffold | `Cargo.toml`, `crates/`, `.cargo/config.toml`, `rust-toolchain.toml` | ✅ 11 crates; `cargo test --workspace` + `cargo fmt --check` pass |
 | First harness | `tools/test_random_parity.py` (+ `oracle/java/src/RandomOracle.java`, `crates/mc-core/examples/random_probe.rs`) | ✅ `random_parity` green: 3,848 lines match `java.util.Random` |
 | Noise | `crates/mc-worldgen/src/noise.rs` + `tools/test_noise_parity.py` (+ `NoiseOracle.java`) | ✅ `noise_parity` green: 1,047 lines match (Improved, Simplex, Perlin, Octaves) |
 | Noise (batch) | `crates/mc-worldgen/src/noise.rs` + `tools/test_noise_batch_parity.py` (+ `NoiseBatchOracle.java`) | ✅ `noise_batch_parity` green: 369 lines match (`Perlin.func_151599_a`/`func_151600_a`, `Simplex.func_151606_a`) |
 | Biome layers | `crates/mc-worldgen/src/layer.rs` + `tools/test_biome_layer_parity.py` (+ `BiomeLayerOracle.java`) | ✅ `biome_layer_parity` green: 4,626 lines match (full `GenLayer*` stack; default overworld) |
 | Terrain | `crates/mc-worldgen/src/terrain.rs` + `tools/test_terrain_parity.py` (+ `TerrainOracle.java`) | ✅ `terrain_parity` green: 16,191 lines match (full base terrain: shape + surface, incl. Mesa) |
 | Math | `crates/mc-core/src/jmath.rs` + `tools/test_math_parity.py` (+ `MathOracle.java`) | ✅ `math_parity` green: 492 lines match (`MathHelper` sin/cos table + floor/clamp helpers) |
+| Perf substrate | `crates/mc-perf` + `docs/performance-contract.md` + `tools/perf_baseline.py` | ✅ P0: contract + spans/`Stats`/alloc/`work`; baseline recorded |
 | Handoff / repo | `handoff.md`, `AGENTS.md`, `scripts/verify.ps1`, `.gitattributes`, git remote | ✅ pushed to `enthu-ux/rusted_mc` (`main`); `scripts/verify.ps1` runs tests + fmt + parity |
 
 **Notes**
