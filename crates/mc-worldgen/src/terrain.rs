@@ -452,6 +452,7 @@ impl TerrainGen {
 
     /// The full base terrain of one chunk (`provideChunk` without caves/ravines/structures).
     pub fn generate_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Vec<u16> {
+        let _span = mc_perf::span("worldgen.chunk");
         self.rand
             .set_seed(chunk_x as i64 * 341873128712 + chunk_z as i64 * 132897987541);
         let mut primer = self.set_blocks_in_chunk(chunk_x, chunk_z);
@@ -471,6 +472,7 @@ impl TerrainGen {
         primer: &mut [u16],
         biomes: &[i32],
     ) {
+        let _span = mc_perf::span("worldgen.surface");
         self.field_147430_m.generate_default(
             &mut self.stone_noise,
             (chunk_x * 16) as f64,
@@ -874,6 +876,7 @@ impl TerrainGen {
 
     /// `ChunkProviderGenerate.setBlocksInChunk` — the stone/water/air shape.
     pub fn set_blocks_in_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Vec<u16> {
+        let _span = mc_perf::span("worldgen.shape");
         let ids = self
             .layers
             .biome

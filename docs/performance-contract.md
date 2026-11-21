@@ -23,8 +23,10 @@ gates: **parity** + **budget**.
 
 ## 2. Instrumentation
 
-- `mc-perf` (ours, dependency-free): spans, wall-clock `Stopwatch`, and `Stats`
-  (min/median/p95/max). Spans are **zero-cost when disabled** (`MC_SPANS`).
+- `mc-perf` (ours, dependency-free): opt-in spans, `Stats` (min/median/p95/max),
+  `work::par_chunks_mut` (deterministic independent parts), and `alloc::CountingAllocator` +
+  `Counters` for the zero-allocation budgets. Spans are **zero-cost when disabled** (`MC_SPANS`);
+  counting is off unless enabled (`MC_ALLOC_COUNT`).
 - Adopt Horizon's `horizon-perf` / `horizon-perf-format` (`.hzperf` captures) and
   `horizon-bench` once a runtime exists (P0 later slice; see
   `docs/horizon-performance-reuse.md`).

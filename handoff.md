@@ -72,7 +72,8 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `6/6 p
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
 - **Workspace:** 11 crates scaffolded (incl. `mc-perf`); `cargo test` + `fmt` green.
 - **Performance (P0):** `docs/performance-contract.md` (budgets/methodology) + `docs/performance-baselines.md`;
-  `mc-perf` (spans/`Stats`, zero-dep) + `tools/perf_baseline.py`; first base-terrain baseline
+  `mc-perf` (spans/`Stats`/`work::par_chunks_mut`/`alloc::CountingAllocator`, zero-dep) +
+  `tools/perf_baseline.py`; spans on the worldgen hot path; first base-terrain baseline
   (Rust 1.35 ms/chunk vs Java 3.63 ms/chunk, caveated).
 - **Harnesses green:** `random_parity` (3,848 lines), `noise_parity` (1,047 lines),
   `noise_batch_parity` (369 lines), `biome_layer_parity` (4,626 lines), `terrain_parity`
@@ -94,7 +95,8 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `6/6 p
 **P0 — performance foundation (in progress).** Done: `vendor/horizon` re-synced to `2f8e8b7`; the
 performance contract (`docs/performance-contract.md`); `mc-perf` + `tools/perf_baseline.py` + first
 chunk-gen baseline. Next: adopt `horizon-threads`/`horizon-system` (mimalloc) when the first binary
-exists; add spans to hot paths; Java client/server FPS/RAM + startup/join baselines.
+exists; Java client/server FPS/RAM + startup/join baselines; fold spans/alloc counts into the CI
+perf gate.
 
 0. ~~**`noise_batch_parity`**~~ **DONE (2026-11-20):** ported `Perlin.func_151599_a`/`func_151600_a`
    and `Simplex.func_151606_a`; harness green at 369 lines.
@@ -220,3 +222,8 @@ exists; add spans to hot paths; Java client/server FPS/RAM + startup/join baseli
   Rust base terrain **1.35 ms/chunk** vs Java 1.8.9 **3.63 ms/chunk** (~2.7x; Rust is
   base-terrain-only vs Java `provideChunk`, so caveated). Next P0: allocator/system (mimalloc)
   when a binary exists, spans in hot paths, Java client/server + startup/join baselines.
+- **2026-11-21 - session 6b (P0 substrate).** Extended `mc-perf`: `alloc::CountingAllocator` +
+  `Counters` (per-instance, opt-in) for the zero-allocation budgets, `work::par_chunks_mut` +
+  `worker_count` (deterministic independent parts, `MC_WORKERS`), and spans on
+  `TerrainGen::{generate_chunk,set_blocks_in_chunk,replace_blocks_for_biome}`. `mc-perf` now has
+  10 tests (+ `alloc_probe` example). `verify.ps1` green: `6/6`, 27 tests.

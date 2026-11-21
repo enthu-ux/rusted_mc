@@ -6,8 +6,6 @@ publish = false
 
 [dependencies]
 mc-core = { workspace = true }
-
-[dev-dependencies]
 mc-perf = { workspace = true }
 
 [lints]

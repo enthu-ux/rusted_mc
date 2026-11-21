@@ -8,6 +8,9 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+pub mod alloc;
+pub mod work;
+
 static SPANS_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Turn span capture on/off (process-wide).
