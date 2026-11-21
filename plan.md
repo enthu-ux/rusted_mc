@@ -226,6 +226,8 @@ Horizon's **tooling is reusable; its fixtures/oracles are 26.3-specific.** Take 
 
 **Vendored copy:** a shallow sparse clone of these paths is at **`vendor/horizon`** (commit `0e5055d`, gitignored). Exactly what was taken/excluded, why, the license boundary, and the command to recreate it are recorded in **`docs/horizon-reuse.md`** (and mirrored in the working copy's `REUSE-NOTES.md`).
 
+**Performance reuse:** the performance inventory (allocator/startup, measurement, streaming/pregeneration, gfx, world storage, launch/asset prep) and the phased adoption plan are in **`docs/horizon-performance-reuse.md`**. Horizon contributes infrastructure + measurement; parity-critical 1.8.9 math stays ours. Today we reuse no Horizon runtime code yet.
+
 ### 14.1 Tooling — take / adapt
 
 | Horizon file | Purpose | Action |

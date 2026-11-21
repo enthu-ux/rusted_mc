@@ -3,6 +3,11 @@
 This is the **tracked** record of what we take from Horizon and why. The working copy lives at
 `vendor/horizon/` (gitignored; a shallow sparse clone). If it is missing, recreate it:
 
+> **Performance reuse:** the full performance inventory (allocator/memory/startup, measurement,
+> streaming/pregeneration, gfx, world storage, launch/asset prep) and the phased adoption plan live
+> in [`horizon-performance-reuse.md`](horizon-performance-reuse.md). Today we reuse **no Horizon
+> runtime code**; that ledger is how we fix it.
+
 ```sh
 git clone --depth 1 --filter=blob:none --sparse https://github.com/horizon-rust/horizon.git vendor/horizon
 git -C vendor/horizon sparse-checkout set \

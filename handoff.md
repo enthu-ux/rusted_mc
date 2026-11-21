@@ -118,6 +118,11 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `6/6 p
 - **Rendering backend (locked):** **Vulkan via `wgpu`** (Horizon's `gfx` device layer) - **no
   OpenGL/LWJGL**. Internal API swap: pixels are gated by the render harness (same art, no
   glitches), so it is not a Deviation Registry entry (plan.md §13, `docs/ARCHITECTURE.md`).
+- **Performance reuse:** `docs/horizon-performance-reuse.md` is the full Horizon performance ledger
+  (allocator/startup, measurement, streaming/pregeneration, gfx, world storage, launch/asset prep)
+  + phased adoption. Today we reuse **no Horizon runtime code**; **P0** = perf architecture contract
+  + measurement baseline + `horizon-threads` allocator/system, to land before M3 (does not block M1).
+  Re-sync `vendor/horizon` (currently `0e5055d`) before copying any code.
 - **Biome-layer gotcha (verified by reflection):** `GenLayerHills.field_151628_d`'s two top `Zoom`
   nodes are never seeded (`GenLayerHills` doesn't override `initWorldGenSeed`), so they keep
   `worldGenSeed = 0`; the `RiverInit`/base chain beneath them is shared with the river chain and
@@ -185,3 +190,12 @@ Expected today: `cargo test` and `fmt` pass; `py tools/parity.py` reports `6/6 p
   (oracle `MathOracle.java` + probe `math_probe.rs`), 2 golden tests. **`math_parity` green at 492
   lines.** Scoped the rest of M1: caves/ravines, structures, decoration, heightmap/biome array.
   `verify.ps1` green: `6/6 passed`.
+- **2026-11-21 - session 5b (Horizon perf audit).** Audited the vendored Horizon tree for
+  performance reuse beyond culling: allocator/memory/startup (`horizon-threads`, `horizon-system`),
+  measurement (`horizon-perf`/`-format`, `horizon-bench`, Callgrind/alloc tools), chunk
+  streaming/pregeneration (`horizon-client-render/streaming.rs`, `docs/pregeneration.md`),
+  gfx plumbing, world storage (`horizon-world` region/compression), launch/asset prep
+  (`horizon-prepare`, `horizon-assets`). Wrote `docs/horizon-performance-reuse.md` (ledger +
+  phased plan) and linked it from `plan.md`, `docs/horizon-reuse.md`, `handoff.md`. Honest finding:
+  we reuse **no Horizon runtime code yet**; P0 (contract + measurement + allocator/system) comes
+  after M1 worldgen.
