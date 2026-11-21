@@ -118,20 +118,34 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 ## Next steps (prioritized, each with a pass condition)
 
-**Recommended next: mineshaft block placement (structures, M1 increment (b), part 2).** P0's
-remaining items need a running binary.
+**Recommended next: the loot/enchantment RNG subsystem, then structure *placement*; or structure
+layouts (b2) in the meantime.** P0's remaining items need a running binary.
 
 1. **`worldgen_seed` — M1 (in progress).** `mc-core::jmath` + `math_parity` done; base terrain done;
    caves + ravines done (`cave.rs` + `caves_parity`); canonical chunk artefacts done (`chunk.rs` +
    `worldgen_parity`); mineshaft **layout** done (`structure/` + `structures_parity`). Remaining:
-   (b1) **next:** mineshaft **block placement** (`StructureStart.generateStructure` /
-   `addComponentParts`), which needs the `populate` oracle (below) and gives decorations their
-   infrastructure too; (b2) the other structures (village / stronghold / scattered feature / ocean
-   monument); (c) decoration (`BiomeDecorator` + feature generators - biggest). Then the full chunk
-   (blocks + metadata + biome + heightmap) for the Gate-C seeds/chunks is reachable and
+   (b1) mineshaft **block placement** — **blocked**, see below; (b2) the other structures' layouts
+   (village / stronghold / scattered feature / ocean monument / nether bridge) - the harness already
+   generalises (dump vanilla's structure NBT); (c) decoration (`BiomeDecorator` + feature generators -
+   biggest); (d) structure/decoration blocks, once the placement infrastructure exists. Then the full
+   chunk (blocks + metadata + biome + heightmap) for the Gate-C seeds/chunks is reachable and
    `worldgen_parity` can take the Gate-C name.
    *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
    and chunks.
+
+   **Why placement is blocked (verified in source):** `addComponentParts` cannot be ported without the
+   **loot RNG**. Each corridor rolls `rand.nextInt(100) == 0` twice per section; on a hit it calls
+   `Items.enchanted_book.getRandom(rand)` as an argument, i.e. `EnchantmentHelper.buildEnchantmentList`
+   -> `ItemBook.getItemEnchantability() == 1` -> `mapEnchantmentData` (a `HashMap<Integer,
+   EnchantmentData>` whose *iteration order* feeds `WeightedRandom.getRandomItem`) plus the
+   enchantment registry. A mineshaft makes roughly 5-10 such rolls, so this is not a rare branch, and
+   those draws shift the rest of the chunk's block placement. Porting it means porting enchantments
+   (weights/levels per item) **and** Java `HashMap` iteration order for `Integer` keys - i.e. the
+   `plan.md` §7 "expect to reimplement Java HashMap order" item. Sequenced properly: (1) loot tables +
+   `WeightedRandomChestContent` (pure arrays, order-independent), (2) enchantment registry + a
+   `java-hashmap` iteration-order helper, (3) mineshaft placement, (4) the `populate` oracle (design
+   below) and the block harness, (5) decoration. Doing (3) before (1)+(2) would produce chunks that
+   match only where no chest rolled - which is almost none of them.
 2. **`light_parity`** - sky/block light arrays after edits match 1.8.9, with the engine **rewritten**
    for performance (plan §7/§13). Starts once `mc-world` chunks exist.
 3. **P0 remainder (when a binary exists):** install `mc-perf::alloc::CountingAllocator` (and
@@ -213,6 +227,23 @@ remaining items need a running binary.
   layout corpus always has `hps=0`; villages/strongholds/scattered features/monuments and the nether
   bridge are unported; a chunk's `structureMap` is `HashMap`-ordered in vanilla, so the dump sorts by
   chunk coordinate (never rely on map order).
+- **Java `HashMap` iteration order is a live parity dependency (two places so far):**
+  `MapGenStructure.structureMap` (two starts meeting one chunk -> whose pieces draw from the shared
+  `populate` rand first) and `EnchantmentHelper.mapEnchantmentData` (chest book enchantments). Both are
+  deterministic per JVM but implementation-defined; porting them needs a modelled `java.util.HashMap`
+  iteration order - the `plan.md` §7 item Horizon also had to reimplement. Until then, structure
+  *placement* corpora must use chunks with a single intersecting start.
+- **Loot/enchantment dependency for placement:** `StructureMineshaftPieces.Corridor` rolls a chest
+  twice per section (≈5-10 per mineshaft) and the roll consumes enchantment RNG before anything else
+  (`Items.enchanted_book.getRandom` -> `buildEnchantmentList` -> `mapEnchantmentData`). Chest *contents*
+  also draw from `WeightedRandomChestContent` (array-ordered, portable) + `nextInt(27)` per slot.
+  Plan the subsystem before any `addComponentParts` port.
+- **Populate oracle design (ready to build):** the headless world needs a stub `IChunkProvider` that
+  stores chunks produced by a `ChunkProviderGenerate` (with `mapFeaturesEnabled = true` and only the
+  wanted feature enabled), because `world.setBlockState` -> `getChunkFromBlockCoords` ->
+  `provider.provideChunk`. Drive `ChunkProviderGenerate.populate(provider, x, z)` explicitly (as
+  `ChunkProviderServer` does), then read the chunk back. `isLiquidInStructureBoundingBox` and the
+  piece writers only read/write inside the populating chunk, so the result is order-independent.
 
 ## Session log (append-only)
 
@@ -340,3 +371,16 @@ remaining items need a running binary.
   `+mineshafts` row); the dev box was loaded, so only the spans were recorded
   (`worldgen.mineshafts` 0.05-0.08 ms/chunk) and the median table was left as-is, per the contract's
   "discard loaded runs" rule.
+- **2026-11-22 - session 10 (b1 scoped, blocked; no code).** Started mineshaft block placement. Read
+  `StructureComponent`'s placement helpers (`isLiquidInStructureBoundingBox`, offsets,
+  `fillWithBlocks`/`fillWithRandomizedBlocks`/`func_175805_a`/`randomlyPlaceBlock`) and
+  `StructureMineshaftPieces.addComponentParts` for all four pieces. Finding: corridor chests roll
+  twice per section (≈5-10 per mineshaft) and each roll consumes **enchantment** RNG
+  (`Items.enchanted_book.getRandom` -> `EnchantmentHelper.buildEnchantmentList` ->
+  `ItemBook.getItemEnchantability() == 1` -> `mapEnchantmentData`, a `HashMap` whose iteration order
+  feeds `WeightedRandom`). So placement cannot be finished without the loot/enchantment subsystem and
+  a Java `HashMap` order model; a placement port without them would match chunks only where no chest
+  rolled. Also confirmed the *other* HashMap-order dependency: two starts meeting one chunk share the
+  `populate` rand in `structureMap.values()` order, so placement corpora must use single-start chunks.
+  Recorded the sequencing and the ready-to-build populate-oracle design in "Next steps"/"Open
+  threads". Tree left clean; nothing committed beyond session 9.
