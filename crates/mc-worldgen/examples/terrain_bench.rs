@@ -1,4 +1,5 @@
-//! In-process chunk-generation benchmark (base terrain) for the performance contract.
+//! In-process chunk-generation benchmark (base terrain: caves/ravines off, matching
+//! `TerrainBench.java`) for the performance contract.
 //!
 //! Prints one JSON line; `tools/perf_baseline.py` pairs it with the Java 1.8.9 baseline.
 
@@ -15,7 +16,7 @@ fn main() {
     for &seed in &seeds {
         let mut gen = TerrainGen::new(seed);
         for c in &chunks {
-            let _ = gen.generate_chunk(c[0], c[1]);
+            let _ = gen.generate_base_chunk(c[0], c[1]);
         }
     }
 
@@ -25,7 +26,7 @@ fn main() {
             let mut gen = TerrainGen::new(seed);
             for c in &chunks {
                 let start = Instant::now();
-                let _ = gen.generate_chunk(c[0], c[1]);
+                let _ = gen.generate_base_chunk(c[0], c[1]);
                 stats.record(start.elapsed());
             }
         }

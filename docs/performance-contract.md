@@ -48,6 +48,7 @@ Per-module budgets (set from measured baselines; `TBD` = filled when the harness
 |---|---|---|
 | Server tick | ms/tick @ 50 players | ≤ 50 (hard); p99 recorded |
 | Worldgen | ms/chunk (base terrain, no caves) | baseline recorded (§6); target set from it |
+| Worldgen | ms/chunk (base terrain + caves + ravines) | measured: +0.29 ms over base (`docs/performance-baselines.md`) |
 | Worldgen | allocations/chunk (hot path) | 0 after warm scratch |
 | Meshing | ms/section | TBD (M3) |
 | Meshing | allocations/section (inner loop) | 0 |
@@ -80,5 +81,7 @@ use when a module is adapted.
 `tools/perf_baseline.py` (Rust `terrain_bench` vs Java `TerrainBench`, same seeds/chunks, release
 build, JIT warm-up, in-process timings). First run: see `docs/performance-baselines.md`.
 
-Caveat: at this stage the two sides are the *base terrain* only (no caves/structures/decoration),
-so this is a starting reference, not the M1 gate.
+Caveat: at this stage the two sides are the *base terrain* only (no caves/ravines/structures), so
+this is a starting reference, not the M1 gate. The cave and ravine passes are ported and
+parity-gated (`caves_parity`) with spans (`worldgen.caves` / `worldgen.ravines`), but
+`terrain_bench` / `TerrainBench` still measure the base pass on both sides for a fair comparison.

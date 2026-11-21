@@ -26,6 +26,10 @@ target/
 # Local harness working data
 .local/
 
+# Python bytecode from harness imports
+__pycache__/
+*.pyc
+
 # Minecraft/Forge logging output from oracle runs
 logs/
 run/

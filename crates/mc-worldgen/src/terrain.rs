@@ -9,6 +9,7 @@
 //! Default `WorldType.DEFAULT` settings (`ChunkProviderSettings.Factory` defaults). Block states
 //! are stamped as `id << 4 | meta`, indexed `x << 12 | z << 8 | y` (vanilla's quirks included).
 
+use crate::cave::{Caves, Ravines};
 use crate::layer::BiomeLayers;
 use crate::noise::{Octaves, Perlin};
 use mc_core::random::JavaRandom;
@@ -202,7 +203,7 @@ fn biome_temp(id: i32) -> f32 {
 }
 
 /// `BiomeGenBase.{topBlock,fillerBlock}` as `id << 4 | meta`, per registered id.
-fn biome_top_filler(id: i32) -> (u16, u16) {
+pub(crate) fn biome_top_filler(id: i32) -> (u16, u16) {
     match id {
         2 | 16 | 17 | 26 => (12 << 4, 12 << 4), // sand
         9 => (DIRT, DIRT),
@@ -362,8 +363,11 @@ fn build_clay_table(r: &mut JavaRandom) -> [u16; 64] {
     a
 }
 
-/// One overworld `ChunkProviderGenerate` (base terrain only).
+/// One overworld `ChunkProviderGenerate`.
 pub struct TerrainGen {
+    seed: i64,
+    caves: Caves,
+    ravines: Ravines,
     lower_gen: Octaves,
     upper_gen: Octaves,
     main_gen: Octaves,
@@ -425,6 +429,9 @@ impl TerrainGen {
         let mesa_f = Perlin::new(&mut r0, 1);
 
         TerrainGen {
+            seed,
+            caves: Caves::new(),
+            ravines: Ravines::new(),
             lower_gen,
             upper_gen,
             main_gen,
@@ -449,9 +456,66 @@ impl TerrainGen {
             layers: BiomeLayers::new(seed),
         }
     }
+}
 
-    /// The full base terrain of one chunk (`provideChunk` without caves/ravines/structures).
-    pub fn generate_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Vec<u16> {
+/// Which passes of `ChunkProviderGenerate.provideChunk` run after the surface replacement.
+/// Structures are not implemented yet, so they are always off.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct GenOptions {
+    pub caves: bool,
+    pub ravines: bool,
+}
+
+impl GenOptions {
+    /// `useCaves = false`, `useRavines = false` (base terrain only).
+    pub fn none() -> GenOptions {
+        GenOptions {
+            caves: false,
+            ravines: false,
+        }
+    }
+
+    /// `ChunkProviderSettings.Factory` defaults.
+    pub fn vanilla() -> GenOptions {
+        GenOptions {
+            caves: true,
+            ravines: true,
+        }
+    }
+}
+
+impl Default for GenOptions {
+    fn default() -> GenOptions {
+        GenOptions::vanilla()
+    }
+}
+
+impl TerrainGen {
+    /// The base terrain of one chunk: `setBlocksInChunk` + `replaceBlocksForBiome`
+    /// (`provideChunk` with caves, ravines and structures off).
+    pub fn generate_base_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Vec<u16> {
+        self.base_and_surface(chunk_x, chunk_z).0
+    }
+
+    /// `ChunkProviderGenerate.provideChunk`: base terrain, surface replacement, then the selected
+    /// carving passes (structures are not ported yet).
+    pub fn generate_chunk(&mut self, chunk_x: i32, chunk_z: i32, opts: GenOptions) -> Vec<u16> {
+        let (mut primer, biomes) = self.base_and_surface(chunk_x, chunk_z);
+        if opts.caves {
+            let _span = mc_perf::span("worldgen.caves");
+            self.caves
+                .generate(self.seed, chunk_x, chunk_z, &mut primer, &biomes);
+        }
+        if opts.ravines {
+            let _span = mc_perf::span("worldgen.ravines");
+            self.ravines
+                .generate(self.seed, chunk_x, chunk_z, &mut primer, &biomes);
+        }
+        primer
+    }
+
+    /// `provideChunk` steps 1-4, returning the primer and the generation biome array.
+    fn base_and_surface(&mut self, chunk_x: i32, chunk_z: i32) -> (Vec<u16>, Vec<i32>) {
         let _span = mc_perf::span("worldgen.chunk");
         self.rand
             .set_seed(chunk_x as i64 * 341873128712 + chunk_z as i64 * 132897987541);
@@ -461,7 +525,7 @@ impl TerrainGen {
             .voronoi
             .get_ints(chunk_x * 16, chunk_z * 16, 16, 16);
         self.replace_blocks_for_biome(chunk_x, chunk_z, &mut primer, &biomes);
-        primer
+        (primer, biomes)
     }
 
     /// `ChunkProviderGenerate.replaceBlocksForBiome`.
@@ -967,7 +1031,7 @@ mod tests {
     #[test]
     fn terrain_surface_golden_seed0_mesa() {
         let mut gen = TerrainGen::new(0);
-        let primer = gen.generate_chunk(-48, -48);
+        let primer = gen.generate_base_chunk(-48, -48);
         let at = |y: usize| primer[y];
         assert_eq!(at(0), BEDROCK);
         assert_eq!(at(61), CLAY_ORANGE);

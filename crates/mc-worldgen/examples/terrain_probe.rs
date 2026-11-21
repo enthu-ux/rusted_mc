@@ -37,7 +37,7 @@ fn main() {
     for &seed in &seeds {
         let mut gen = TerrainGen::new(seed);
         for c in &chunks {
-            let primer = gen.generate_chunk(c[0], c[1]);
+            let primer = gen.generate_base_chunk(c[0], c[1]);
             out.push_str(&format!("seed {} chunk {} {}\n", seed, c[0], c[1]));
             for x in 0..16usize {
                 for z in 0..16usize {
