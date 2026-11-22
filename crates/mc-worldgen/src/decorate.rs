@@ -139,6 +139,7 @@ pub struct DecorateOptions {
     pub surface: bool,
     pub trees: bool,
     pub plants: bool,
+    pub springs: bool,
 }
 
 impl DecorateOptions {
@@ -148,6 +149,7 @@ impl DecorateOptions {
             surface: false,
             trees: false,
             plants: false,
+            springs: false,
         }
     }
 
@@ -157,6 +159,7 @@ impl DecorateOptions {
             surface: true,
             trees: true,
             plants: true,
+            springs: true,
         }
     }
 }
@@ -541,6 +544,9 @@ pub fn decorate(
             grass_noise,
             big_mushroom,
         );
+    }
+    if opts.springs {
+        springs(world, rand, biome_x, biome_z);
     }
 }
 
@@ -1707,6 +1713,139 @@ fn plants(
     }
 }
 
+// ---- springs (`WorldGenLiquids`) ----
+
+/// `BiomeDecorator.genDecorations`' springs section (`generateLakes`).
+fn springs(world: &mut DecorateWorld, rand: &mut JavaRandom, bx: i32, bz: i32) {
+    for _ in 0..50 {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let y = rand.next_int_bound(248) + 8;
+        if y > 0 {
+            let yy = rand.next_int_bound(y);
+            gen_liquids(
+                world,
+                bx + x,
+                yy,
+                bz + z,
+                blocks::FLOWING_WATER,
+                blocks::WATER,
+                1,
+            );
+        }
+    }
+    for _ in 0..20 {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let a = rand.next_int_bound(240) + 8;
+        let b = rand.next_int_bound(a) + 8;
+        let y = rand.next_int_bound(b);
+        gen_liquids(
+            world,
+            bx + x,
+            y,
+            bz + z,
+            blocks::FLOWING_LAVA,
+            blocks::LAVA,
+            2,
+        );
+    }
+}
+
+/// `WorldGenLiquids.generate`: a 3-stone / 1-air pocket spring, then the immediate liquid tick.
+///
+/// The tick runs on a plain `World` (the oracle), whose `scheduleUpdate` is a no-op, so
+/// `BlockDynamicLiquid.updateTick` is a single level-0 step: place the static liquid at `pos`
+/// (the stone above/below stops vertical flow) and a flowing liquid at `flow_level` in the one
+/// open horizontal neighbour (`flow_level` = 1 for water, 2 for overworld lava).
+#[allow(clippy::too_many_arguments)]
+fn gen_liquids(
+    world: &mut DecorateWorld,
+    x: i32,
+    y: i32,
+    z: i32,
+    dynamic_id: i32,
+    static_id: i32,
+    flow_level: i32,
+) -> bool {
+    if world.get_id(x, y + 1, z) != blocks::STONE {
+        return false;
+    }
+    if world.get_id(x, y - 1, z) != blocks::STONE {
+        return false;
+    }
+    let center = world.get_id(x, y, z);
+    if center != blocks::AIR && center != blocks::STONE {
+        return false;
+    }
+    let stone = (world.get_id(x - 1, y, z) == blocks::STONE) as i32
+        + (world.get_id(x + 1, y, z) == blocks::STONE) as i32
+        + (world.get_id(x, y, z - 1) == blocks::STONE) as i32
+        + (world.get_id(x, y, z + 1) == blocks::STONE) as i32;
+    let air = world.is_air(x - 1, y, z) as i32
+        + world.is_air(x + 1, y, z) as i32
+        + world.is_air(x, y, z - 1) as i32
+        + world.is_air(x, y, z + 1) as i32;
+    if stone == 3 && air == 1 {
+        world.set(x, y, z, (dynamic_id as u16) << 4); // level 0
+                                                      // `forceBlockUpdateTick` -> `BlockDynamicLiquid.updateTick` (level 0):
+                                                      //   `placeStaticBlock(pos)` writes the static liquid, then the one open horizontal
+                                                      //   neighbour receives a flowing block at `flow_level` via flag 3. That set's
+                                                      //   neighbour notification calls `onNeighborBlockChange` on every block within a
+                                                      //   Manhattan radius 2 of it; `BlockStaticLiquid.updateLiquid` converts any such static
+                                                      //   liquid back to its flowing block (same level, update scheduled = no-op), which also
+                                                      //   reverts `pos` itself. Net: `pos` stays flowing level 0, the neighbour is flowing at
+                                                      //   `flow_level`, and nearby static water/lava becomes flowing.
+        let _ = static_id;
+        for (dx, dz) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
+            if world.is_air(x + dx, y, z + dz) {
+                world.set(
+                    x + dx,
+                    y,
+                    z + dz,
+                    ((dynamic_id as u16) << 4) | flow_level as u16,
+                );
+                convert_static_liquids(world, x + dx, y, z + dz);
+            }
+        }
+    }
+    true
+}
+
+/// `BlockStaticLiquid.onNeighborBlockChange` over the 6 neighbours `notifyNeighborsOfStateChange`
+/// notifies: any static liquid among them becomes its flowing block (same level; update = no-op).
+fn convert_static_liquids(world: &mut DecorateWorld, cx: i32, cy: i32, cz: i32) {
+    for (dx, dy, dz) in [
+        (-1, 0, 0),
+        (1, 0, 0),
+        (0, -1, 0),
+        (0, 1, 0),
+        (0, 0, -1),
+        (0, 0, 1),
+    ] {
+        let v = world.get(cx + dx, cy + dy, cz + dz);
+        match (v >> 4) as i32 {
+            blocks::WATER => {
+                world.set(
+                    cx + dx,
+                    cy + dy,
+                    cz + dz,
+                    ((blocks::FLOWING_WATER as u16) << 4) | (v & 15),
+                );
+            }
+            blocks::LAVA => {
+                world.set(
+                    cx + dx,
+                    cy + dy,
+                    cz + dz,
+                    ((blocks::FLOWING_LAVA as u16) << 4) | (v & 15),
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1838,5 +1977,27 @@ mod tests {
         assert_eq!(biome_trees(37), -999); // mesa
         assert_eq!(biome_trees(38), 5); // mesa plateau F
         assert_eq!(biome_trees(132), 6); // flower forest
+    }
+
+    /// A 3-stone / 1-air pocket spring stays flowing level 0 and flows into its one open neighbour.
+    #[test]
+    fn spring_places_flowing_liquid_in_a_pocket() {
+        let mut world = stone_world(63);
+        world.set(8, 20, 8, 0); // spring position
+        world.set(8, 20, 9, 0); // the one open (south) neighbour
+        gen_liquids(
+            &mut world,
+            8,
+            20,
+            8,
+            blocks::FLOWING_WATER,
+            blocks::WATER,
+            1,
+        );
+        assert_eq!(world.get(8, 20, 8), (blocks::FLOWING_WATER as u16) << 4);
+        assert_eq!(
+            world.get(8, 20, 9),
+            ((blocks::FLOWING_WATER as u16) << 4) | 1
+        );
     }
 }

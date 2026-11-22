@@ -48,6 +48,7 @@ import net.minecraft.world.gen.feature.WorldGenClay;
 import net.minecraft.world.gen.feature.WorldGenDeadBush;
 import net.minecraft.world.gen.feature.WorldGenFlowers;
 import net.minecraft.world.gen.feature.WorldGenMinable;
+import net.minecraft.world.gen.feature.WorldGenLiquids;
 import net.minecraft.world.gen.feature.WorldGenPumpkin;
 import net.minecraft.world.gen.feature.WorldGenSand;
 import net.minecraft.world.gen.feature.WorldGenerator;
@@ -141,6 +142,29 @@ public class DecorationOracle {
                     plants(this.world, rand, field, biome);
                 }
             }
+            if (mode.contains("spring")) {
+                springs(this.world, rand, field);
+            }
+        }
+    }
+
+    // ---- BiomeDecorator.genDecorations' springs section ----
+
+    static void springs(World world, Random rand, BlockPos field) {
+        for (int i = 0; i < 50; i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int y = rand.nextInt(248) + 8;
+            if (y > 0) {
+                int yy = rand.nextInt(y);
+                new WorldGenLiquids(Blocks.flowing_water).generate(world, rand, field.add(x, yy, z));
+            }
+        }
+        for (int i = 0; i < 20; i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int y = rand.nextInt(rand.nextInt(rand.nextInt(240) + 8) + 8);
+            new WorldGenLiquids(Blocks.flowing_lava).generate(world, rand, field.add(x, y, z));
         }
     }
 

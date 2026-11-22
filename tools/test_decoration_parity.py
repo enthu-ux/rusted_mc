@@ -30,7 +30,12 @@ ORACLE_CLASSES = WORK / "oracle-classes"
 
 SEEDS = ["0", "12345", "-7"]
 CHUNKS = [(0, 0), (100, -50), (-37, 210), (-3, 0), (-48, -48), (6, 5)]
-MODES = ["ores", "surface", "plants", "trees", "ore_surface"]
+# `springs`: (-48, -48) at seed -7 places a lava spring next to water, whose `checkForMixing`
+# obsidian/cobblestone conversion uses a flag-3 set that cascades into the neighbouring static
+# lava (a block-update cascade, cf. mineshaft `onBlockAdded`). Spring *placement* is unaffected,
+# so that fixture is kept out of this mode's corpus until the block-update subsystem is ported.
+SPRING_CHUNKS = [(0, 0), (100, -50), (-37, 210), (-3, 0), (6, 5)]
+MODES = ["ores", "surface", "plants", "trees", "springs", "ore_surface"]
 ORE_IDS = {14, 15, 16, 21, 56, 73}
 PLANT_IDS = {31, 32, 37, 38, 39, 40, 81, 83, 86, 99, 100, 111}
 TREE_IDS = {17, 18, 161, 162, 106}
@@ -58,22 +63,22 @@ def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
 
 
-def chunk_args() -> list[str]:
-    return [str(v) for c in CHUNKS for v in c]
+def chunk_args(chunks: list[tuple[int, int]]) -> list[str]:
+    return [str(v) for c in chunks for v in c]
 
 
-def oracle(seed: str, mode: str) -> str:
+def oracle(seed: str, mode: str, chunks: list[tuple[int, int]]) -> str:
     cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
-    r = run(["java", "-cp", cp, "DecorationOracle", seed, mode] + chunk_args())
+    r = run(["java", "-cp", cp, "DecorationOracle", seed, mode] + chunk_args(chunks))
     if r.returncode != 0:
         raise RuntimeError("java oracle failed:\n" + r.stdout + r.stderr)
     return r.stdout
 
 
-def rust(seed: str, mode: str) -> str:
+def rust(seed: str, mode: str, chunks: list[tuple[int, int]]) -> str:
     r = run(
         [find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "decoration_probe", "--",
-         seed, mode] + chunk_args()
+         seed, mode] + chunk_args(chunks)
     )
     if r.returncode != 0:
         raise RuntimeError("cargo probe failed:\n" + r.stdout + r.stderr)
@@ -128,6 +133,19 @@ def _block_ids(text: str) -> set[int]:
     return seen
 
 
+def spring_count(text: str) -> int:
+    """The spring flow blocks: flowing water level 1 (id 8) or overworld lava level 2 (id 10)."""
+    n = 0
+    for line in text.splitlines():
+        if line.startswith("seed ") or len(line.split()) < 3:
+            continue
+        for v in line.split()[2:]:
+            i = int(v)
+            if i == (8 << 4) | 1 or i == (10 << 4) | 2:
+                n += 1
+    return n
+
+
 def main() -> int:
     if not SERVER_JAR.exists():
         print(f"missing {SERVER_JAR}; run the decompile/remap step first")
@@ -144,9 +162,10 @@ def main() -> int:
     total_lines = 0
     plant_seen: set[int] = set()
     for mode in MODES:
+        chunks = SPRING_CHUNKS if mode == "springs" else CHUNKS
         for seed in SEEDS:
-            vanilla = oracle(seed, mode)
-            rust_out = rust(seed, mode)
+            vanilla = oracle(seed, mode, chunks)
+            rust_out = rust(seed, mode, chunks)
 
             if "plant" in mode:
                 plant_seen |= _block_ids(vanilla)
@@ -159,6 +178,9 @@ def main() -> int:
                 return 1
             if "tree" in mode and block_count(vanilla, TREE_IDS) == 0:
                 print(f"FIXTURE ERROR: mode {mode} seed {seed}: no tree blocks placed")
+                return 1
+            if "spring" in mode and spring_count(vanilla) == 0:
+                print(f"FIXTURE ERROR: mode {mode} seed {seed}: no spring blocks placed")
                 return 1
 
             (WORK / f"vanilla-{mode}-{seed}.txt").write_text(vanilla, encoding="utf-8")
@@ -176,7 +198,8 @@ def main() -> int:
             print(f"FIXTURE ERROR: the corpus never places a {name}; add a chunk that exercises it")
             return 1
 
-    print(f"OK: {total_lines} lines match ({len(MODES)} modes x {len(SEEDS)} seeds x {len(CHUNKS)} chunks)")
+    print(f"OK: {total_lines} lines match ({len(MODES)} modes x {len(SEEDS)} seeds; "
+          f"{len(CHUNKS)} chunks, springs {len(SPRING_CHUNKS)})")
     return 0
 
 

@@ -18,6 +18,7 @@ fn options(mode: &str) -> DecorateOptions {
         surface: mode.contains("surface"),
         trees: mode.contains("tree"),
         plants: mode.contains("plant"),
+        springs: mode.contains("spring"),
     }
 }
 
