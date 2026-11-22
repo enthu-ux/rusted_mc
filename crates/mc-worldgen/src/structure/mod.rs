@@ -16,7 +16,12 @@
 //! into anything observable - the dump sorts by chunk coordinate.
 
 pub mod mineshaft;
+pub mod monument;
+pub mod netherbridge;
 pub mod placement;
+pub mod scattered;
+pub mod stronghold;
+pub mod village;
 
 use mc_core::random::JavaRandom;
 
@@ -139,6 +144,237 @@ impl BoundingBox {
     }
 }
 
+/// The `StructureNetherBridgePieces` piece classes (the `MapGenNetherBridge` fortress).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NetherKind {
+    Straight,
+    Crossing3,
+    Crossing,
+    Stairs,
+    Throne,
+    Entrance,
+    Corridor5,
+    Crossing2,
+    Corridor2,
+    Corridor,
+    Corridor3,
+    Corridor4,
+    NetherStalkRoom,
+    Start,
+    End,
+}
+
+impl NetherKind {
+    /// The `MapGenStructureIO` component name.
+    pub fn id(self) -> &'static str {
+        match self {
+            NetherKind::Straight => "NeBS",
+            NetherKind::Crossing3 => "NeBCr",
+            NetherKind::Crossing => "NeRC",
+            NetherKind::Stairs => "NeSR",
+            NetherKind::Throne => "NeMT",
+            NetherKind::Entrance => "NeCE",
+            NetherKind::Corridor5 => "NeSC",
+            NetherKind::Crossing2 => "NeSCSC",
+            NetherKind::Corridor2 => "NeSCRT",
+            NetherKind::Corridor => "NeSCLT",
+            NetherKind::Corridor3 => "NeCCS",
+            NetherKind::Corridor4 => "NeCTB",
+            NetherKind::NetherStalkRoom => "NeCSR",
+            NetherKind::Start => "NeStart",
+            NetherKind::End => "NeBEF",
+        }
+    }
+}
+
+/// The `StructureVillagePieces` piece classes (the `MapGenVillage` village).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum VillageKind {
+    Well,
+    Start,
+    Torch,
+    Church,
+    Hall,
+    House1,
+    House2,
+    House3,
+    House4Garden,
+    WoodHut,
+    Field1,
+    Field2,
+    Path,
+}
+
+impl VillageKind {
+    /// The `MapGenStructureIO` component name.
+    pub fn id(self) -> &'static str {
+        match self {
+            VillageKind::Well => "ViW",
+            VillageKind::Start => "ViStart",
+            VillageKind::Torch => "ViL",
+            VillageKind::Church => "ViST",
+            VillageKind::Hall => "ViPH",
+            VillageKind::House1 => "ViBH",
+            VillageKind::House2 => "ViS",
+            VillageKind::House3 => "ViTRH",
+            VillageKind::House4Garden => "ViSH",
+            VillageKind::WoodHut => "ViSmH",
+            VillageKind::Field1 => "ViDF",
+            VillageKind::Field2 => "ViF",
+            VillageKind::Path => "ViSR",
+        }
+    }
+
+    /// `StructureVillagePieces.Road` subclasses (only `Path`); `MapGenVillage.Start` counts these
+    /// separately when deciding `isSizeableStructure`.
+    pub fn is_road(self) -> bool {
+        matches!(self, VillageKind::Path)
+    }
+}
+
+/// A `StructureVillagePieces.Village` piece with its kind-specific serialized fields. `h_pos`
+/// (`HPos`) is -1 and `v_count` (`VCount`) is 0 at layout time (both are set during block placement).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct VillagePiece {
+    pub kind: VillageKind,
+    pub h_pos: i32,
+    pub v_count: i32,
+    pub desert: bool,
+    /// `Field1`/`Field2` crop block ids (`CA`..`CD`; unused entries 0).
+    pub crops: [i32; 4],
+    pub chest: bool,
+    pub terrace: bool,
+    pub tall: bool,
+    pub table: i32,
+    pub length: i32,
+}
+
+/// The `StructureStrongholdPieces` piece classes (the `MapGenStronghold` stronghold).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StrongholdKind {
+    Stairs2,
+    Straight,
+    Prison,
+    LeftTurn,
+    RightTurn,
+    RoomCrossing,
+    StairsStraight,
+    Stairs,
+    Crossing,
+    ChestCorridor,
+    Library,
+    PortalRoom,
+    Corridor,
+}
+
+impl StrongholdKind {
+    /// The `MapGenStructureIO` component name.
+    pub fn id(self) -> &'static str {
+        match self {
+            StrongholdKind::Stairs2 => "SHStart",
+            StrongholdKind::Straight => "SHS",
+            StrongholdKind::Prison => "SHPH",
+            StrongholdKind::LeftTurn => "SHLT",
+            StrongholdKind::RightTurn => "SHRT",
+            StrongholdKind::RoomCrossing => "SHRC",
+            StrongholdKind::StairsStraight => "SHSSD",
+            StrongholdKind::Stairs => "SHSD",
+            StrongholdKind::Crossing => "SH5C",
+            StrongholdKind::ChestCorridor => "SHCC",
+            StrongholdKind::Library => "SHLi",
+            StrongholdKind::PortalRoom => "SHPR",
+            StrongholdKind::Corridor => "SHFC",
+        }
+    }
+}
+
+/// `StructureStrongholdPieces.Stronghold.Door` (`EntryDoor`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Door {
+    Opening,
+    WoodDoor,
+    Grates,
+    IronDoor,
+}
+
+impl Door {
+    /// The enum constant name, as written to NBT.
+    pub fn name(self) -> &'static str {
+        match self {
+            Door::Opening => "OPENING",
+            Door::WoodDoor => "WOOD_DOOR",
+            Door::Grates => "GRATES",
+            Door::IronDoor => "IRON_DOOR",
+        }
+    }
+}
+
+/// A `StructureStrongholdPieces.Stronghold` piece: the base `EntryDoor` plus the kind-specific
+/// serialized fields.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct StrongholdPiece {
+    pub kind: StrongholdKind,
+    pub door: Door,
+    /// `Corridor` (`Steps`).
+    pub steps: i32,
+    /// `ChestCorridor` (`Chest`).
+    pub chest: bool,
+    /// `Crossing` (`leftLow`/`leftHigh`/`rightLow`/`rightHigh`).
+    pub left_low: bool,
+    pub left_high: bool,
+    pub right_low: bool,
+    pub right_high: bool,
+    /// `Library` (`Tall`).
+    pub tall: bool,
+    /// `PortalRoom` (`Mob`).
+    pub has_spawner: bool,
+    /// `RoomCrossing` (`Type`).
+    pub room_type: i32,
+    /// `Stairs`/`Stairs2` (`Source`).
+    pub source: bool,
+    /// `Straight` (`Left`/`Right`).
+    pub expands_x: bool,
+    pub expands_z: bool,
+}
+
+impl Default for StrongholdPiece {
+    fn default() -> Self {
+        StrongholdPiece {
+            kind: StrongholdKind::Straight,
+            door: Door::Opening,
+            steps: 0,
+            chest: false,
+            left_low: false,
+            left_high: false,
+            right_low: false,
+            right_high: false,
+            tall: false,
+            has_spawner: false,
+            room_type: 0,
+            source: false,
+            expands_x: false,
+            expands_z: false,
+        }
+    }
+}
+
+impl Default for VillagePiece {
+    fn default() -> Self {
+        VillagePiece {
+            kind: VillageKind::Well,
+            h_pos: -1,
+            v_count: 0,
+            desert: false,
+            crops: [0; 4],
+            chest: false,
+            terrace: false,
+            tall: false,
+            table: 0,
+            length: 0,
+        }
+    }
+}
+
 /// The kind-specific state of a `StructureComponent`. Only the fields vanilla uses (and serializes)
 /// are kept; `MineshaftRoom`'s linked boxes are runtime-only, used by its block placement.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -160,6 +396,42 @@ pub enum PieceKind {
     MineshaftRoom { linked_rooms: Vec<BoundingBox> },
     /// `StructureMineshaftPieces.Stairs`.
     MineshaftStairs,
+    /// `ComponentScatteredFeaturePieces.DesertPyramid` (`TeDP`).
+    TempleDesertPyramid {
+        size: [i32; 3],
+        h_pos: i32,
+        chests: [bool; 4],
+    },
+    /// `ComponentScatteredFeaturePieces.JunglePyramid` (`TeJP`).
+    TempleJunglePyramid {
+        size: [i32; 3],
+        h_pos: i32,
+        main_chest: bool,
+        hidden_chest: bool,
+        trap1: bool,
+        trap2: bool,
+    },
+    /// `ComponentScatteredFeaturePieces.SwampHut` (`TeSH`).
+    TempleSwampHut {
+        size: [i32; 3],
+        h_pos: i32,
+        witch: bool,
+    },
+    /// `StructureOceanMonumentPieces.MonumentBuilding` (`OMB`). The monument's room pieces live in
+    /// the building's own list (not the start's components), so only this one piece is serialized.
+    MonumentBuilding,
+    /// A `StructureNetherBridgePieces` fortress piece. `chest` (`Chest`), `seed` (`Seed`) and
+    /// `has_spawner` (`Mob`) are the kind-specific serialized fields.
+    Nether {
+        kind: NetherKind,
+        chest: bool,
+        seed: i32,
+        has_spawner: bool,
+    },
+    /// A `StructureVillagePieces.Village` piece.
+    Village(VillagePiece),
+    /// A `StructureStrongholdPieces.Stronghold` piece.
+    Stronghold(StrongholdPiece),
 }
 
 impl PieceKind {
@@ -170,6 +442,13 @@ impl PieceKind {
             PieceKind::MineshaftCross { .. } => "MSCrossing",
             PieceKind::MineshaftRoom { .. } => "MSRoom",
             PieceKind::MineshaftStairs => "MSStairs",
+            PieceKind::TempleDesertPyramid { .. } => "TeDP",
+            PieceKind::TempleJunglePyramid { .. } => "TeJP",
+            PieceKind::TempleSwampHut { .. } => "TeSH",
+            PieceKind::MonumentBuilding => "OMB",
+            PieceKind::Nether { kind, .. } => kind.id(),
+            PieceKind::Village(v) => v.kind.id(),
+            PieceKind::Stronghold(s) => s.kind.id(),
         }
     }
 }
@@ -194,6 +473,9 @@ pub struct StructureStart {
     pub chunk_z: i32,
     pub bbox: BoundingBox,
     pub pieces: Vec<Piece>,
+    /// `StructureStart.isSizeableStructure()` - false for a village with <= 2 non-road pieces
+    /// (such a start is never placed).
+    pub sizeable: bool,
 }
 
 impl StructureStart {
@@ -208,7 +490,12 @@ impl StructureStart {
 
     /// `markAvailableHeight`: raise the whole structure so its top sits `height` blocks under sea
     /// level, drawing at most one `nextInt` (and only when it is short enough to need lifting).
-    fn mark_available_height(&mut self, rand: &mut JavaRandom, sea_level: i32, height: i32) {
+    pub(crate) fn mark_available_height(
+        &mut self,
+        rand: &mut JavaRandom,
+        sea_level: i32,
+        height: i32,
+    ) {
         let span = sea_level - height;
         let mut size = self.bbox.y_size() + 1;
         if size < span {
@@ -228,6 +515,23 @@ impl StructureStart {
         }
     }
 
+    /// `StructureStart.setRandomHeight` (`MapGenNetherBridge.Start`): offset the whole structure so
+    /// its `minY` lands in `[min, max]`, drawing at most one `nextInt`.
+    pub(crate) fn set_random_height(&mut self, rand: &mut JavaRandom, min: i32, max: i32) {
+        let span = max - min + 1 - self.bbox.y_size();
+        let base = if span > 1 {
+            min + rand.next_int_bound(span)
+        } else {
+            min
+        };
+
+        let dy = base - self.bbox.min_y;
+        self.bbox.offset(0, dy, 0);
+        for piece in &mut self.pieces {
+            piece.bbox.offset(0, dy, 0);
+        }
+    }
+
     /// The starts whose box meets the 16x16 chunk area `generateStructure` would be given.
     pub fn intersects_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
         let x = (chunk_x << 4) + 8;
@@ -239,4 +543,54 @@ impl StructureStart {
 /// `StructureComponent.findIntersecting`.
 pub fn find_intersecting(pieces: &[Piece], bbox: &BoundingBox) -> Option<usize> {
     pieces.iter().position(|p| p.bbox.intersects_with(bbox))
+}
+
+/// `StructureBoundingBox.getComponentToAddBoundingBox`.
+#[allow(clippy::too_many_arguments)]
+pub fn component_box(
+    x: i32,
+    y: i32,
+    z: i32,
+    off_x: i32,
+    off_y: i32,
+    off_z: i32,
+    size_x: i32,
+    size_y: i32,
+    size_z: i32,
+    facing: Facing,
+) -> BoundingBox {
+    match facing {
+        Facing::North => BoundingBox::new(
+            x + off_x,
+            y + off_y,
+            z - size_z + 1 + off_z,
+            x + size_x - 1 + off_x,
+            y + size_y - 1 + off_y,
+            z + off_z,
+        ),
+        Facing::South => BoundingBox::new(
+            x + off_x,
+            y + off_y,
+            z + off_z,
+            x + size_x - 1 + off_x,
+            y + size_y - 1 + off_y,
+            z + size_z - 1 + off_z,
+        ),
+        Facing::West => BoundingBox::new(
+            x - size_z + 1 + off_z,
+            y + off_y,
+            z + off_x,
+            x + off_z,
+            y + size_y - 1 + off_y,
+            z + size_x - 1 + off_x,
+        ),
+        Facing::East => BoundingBox::new(
+            x + off_z,
+            y + off_y,
+            z + off_x,
+            x + size_z - 1 + off_z,
+            y + size_y - 1 + off_y,
+            z + size_x - 1 + off_x,
+        ),
+    }
 }

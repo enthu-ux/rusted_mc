@@ -44,7 +44,8 @@ fn main() {
             },
         ),
         // Structures only *register* during `provideChunk`; their blocks come from `populate`.
-        ("+mines", GenOptions::vanilla()),
+        // `vanilla()` enables caves, ravines, mineshafts and scattered features (temples).
+        ("+struct", GenOptions::vanilla()),
     ];
     let iters = 5;
 

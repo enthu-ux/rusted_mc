@@ -11,7 +11,9 @@ Blocks are written later, in `populate` (`MapGenStructure.generateStructure`), w
 yet - so this harness pins the layout half only; `plan.md` Gate C waits for both.
 
 Fixtures: the Gate-C chunks plus chunks that are mineshaft origins (or fall inside one) in at least
-one seed, so every seed has signal. Guard: every seed must produce at least one start.
+one seed, chunks that report a scattered feature (temple/hut) start, chunks that report an ocean
+monument start, chunks that report a nether fortress start, and village origins. Guards: every seed
+must produce at least one start *of each kind* (mineshaft, temple, monument, fortress, village).
 
 Outputs are cached under .local/structures/.
 """
@@ -40,6 +42,46 @@ CHUNKS = [
     (102, -45), (-51, 211), (504, 511),
     # seed -7: (86,-31), (-33,198), (500,513)
     (86, -31), (-33, 198), (500, 513),
+    # Scattered features (temples). A start at chunk (sx, sz) is reported by the chunks whose
+    # box-matching area touches it, so these include a neighbour of the origin chunk:
+    # seed 0: swamp hut at (3,47)  -> reported by (2,46), (3,46)
+    (2, 46), (3, 46),
+    # seed 12345: swamp hut at (-26,49) -> reported by (-27,48), (-26,48)
+    (-27, 48), (-26, 48),
+    # seed -7: desert pyramid at (4,2) -> reported by (3,1), (4,1)
+    (3, 1), (4, 1),
+    # seed 12345: jungle pyramid at (72,-155) -> reported by (71,-156), (71,-155)
+    (71, -156), (71, -155),
+    # Ocean monuments (the origin chunk reports its own building box):
+    # seed 0: monument at (77,-50) and (86,-12)
+    (77, -50), (86, -12),
+    # seed 12345: monument at (-695,458)
+    (-695, 458),
+    # seed -7: monuments at (-40,-23) and (-28,21)
+    (-40, -23), (-28, 21),
+    # Nether fortresses (a standalone nether generator; the origin chunk reports its own box):
+    # seed 0: (-38,-39), (-24,24)
+    (-38, -39), (-24, 24),
+    # seed 12345: (-25,-41), (-7,-10)
+    (-25, -41), (-7, -10),
+    # seed -7: (-12,-39), (4,-21)
+    (-12, -39), (4, -21),
+    # Villages (the origin chunk reports its own well):
+    # seed 0: (-53,-16)
+    (-53, -16),
+    # seed 12345: (-47,-26), (-43,5)
+    (-47, -26), (-43, 5),
+    # seed -7: (34,1) reports the village at (35,1); (37,-12) reports its own
+    (34, 1), (37, -12),
+    # desert village (exercises the `inDesert` / `Desert=1` branch): seed 0, origin (-210,-151)
+    (-211, -151),
+    # Strongholds (3 ring positions per seed; the origin chunk reports its own):
+    # seed 0: (-37,39), (-9,-41), (67,32)
+    (-37, 39), (-9, -41), (67, 32),
+    # seed 12345: (-44,59), (-16,-38), (61,18)
+    (-44, 59), (-16, -38), (61, 18),
+    # seed -7: (-44,-34), (-7,61), (61,-19)
+    (-44, -34), (-7, 61), (61, -19),
 ]
 
 
@@ -70,8 +112,21 @@ def oracle(seed: str) -> str:
 
 
 def guard(text: str, seed: str) -> str | None:
-    if "\nstart " not in "\n" + text:
+    body = "\n" + text
+    if "\nstart " not in body:
         return f"seed {seed}: no structure starts registered at all; fixture has no signal"
+    if "\nstart Mineshaft " not in body:
+        return f"seed {seed}: no mineshaft start; mineshaft fixture has no signal"
+    if "\nstart Temple " not in body:
+        return f"seed {seed}: no scattered-feature start; temple fixture has no signal"
+    if "\nstart Monument " not in body:
+        return f"seed {seed}: no ocean-monument start; monument fixture has no signal"
+    if "\nstart Fortress " not in body:
+        return f"seed {seed}: no nether-fortress start; fortress fixture has no signal"
+    if "\nstart Village " not in body:
+        return f"seed {seed}: no village start; village fixture has no signal"
+    if "\nstart Stronghold " not in body:
+        return f"seed {seed}: no stronghold start; stronghold fixture has no signal"
     return None
 
 

@@ -35,11 +35,14 @@ blocks-only, so the base-terrain baseline above is unchanged. No Java counterpar
 | base terrain + artefacts (`GenOptions::none`) | 1.5828 | 3.0664 | 7.1551 |
 | + caves | 1.8111 | 3.6016 | 5.4359 |
 | + caves + ravines | 1.9490 | 3.5028 | 6.8443 |
-| + mineshaft registration (`GenOptions::vanilla`) | not recorded | - | - |
+| + structure registration (`GenOptions::vanilla`) | not recorded | - | - |
 
 `mc-perf` spans (mean per call, the same run): `worldgen.chunk` 1.7577, `worldgen.shape` 1.3162,
 `worldgen.surface` 0.2776, `worldgen.caves` 0.2474, `worldgen.ravines` 0.0623,
-`worldgen.artifacts` 0.0561 ms.
+`worldgen.artifacts` 0.0561 ms. (`GenOptions::vanilla` now also registers scattered features, ocean
+monuments, villages and strongholds, emitting `worldgen.temples` / `worldgen.monuments` /
+`worldgen.villages` / `worldgen.strongholds` spans; the rows above were measured before those
+additions.)
 
 Reading: carving ≈ **+0.37 ms/chunk**, artefact build ≈ **0.06 ms/chunk** (`worldgen.artifacts`).
 Run-to-run spread on this dev box is roughly ±20% (a loaded machine moved the base row by 60% with no

@@ -180,15 +180,19 @@ Version-agnostic and directly address "don't reinvent the wheel":
 - Dump blocks + metadata + biome + heightmap canonically; hash.
 - **Pass:** `python tools/parity.py worldgen_seed` exits 0, **0 mismatched chunks**; on failure, names the **first differing block coordinate**.
 
-**Staged.** Structures and decoration are not ported yet and both change blocks, so the Gate-C name
-stays reserved for the final chunk. The pieces that exist are pinned separately: `worldgen_parity`
+**Staged.** All six structure layouts are now ported; decoration is not yet, and both change blocks,
+so the Gate-C name stays reserved for the final chunk. The pieces that exist are pinned separately:
+`worldgen_parity`
 (`tools/test_worldgen_parity.py`) covers blocks + metadata + biome + heightmap for the
 **pre-decoration** `provideChunk` output on these seeds/chunks (plus cave/ravine/mesa/ocean
 fixtures), and `structures_parity` covers the structure *layout* registered during `provideChunk`
-(starts, pieces, bounding boxes). Structure *blocks* are written in `populate`: the mineshaft half is
+(starts, pieces, bounding boxes) for mineshafts, scattered features (temples/huts), ocean monuments,
+nether fortresses, villages and strongholds. Structure *blocks* are written in `populate`: the
+mineshaft half is
 now ported (`mineshaft_placement_parity`) together with the RNG its chests consume (`loot_parity`:
-`WeightedRandomChestContent` + `EnchantmentHelper.buildEnchantmentList`); the other structures' layouts
-and decoration are still unported, so the Gate-C harness waits for them. (Vanilla's `onBlockAdded`
+`WeightedRandomChestContent` + `EnchantmentHelper.buildEnchantmentList`); all six structure layouts
+are now ported, so only decoration is still unported and the
+Gate-C harness waits for it. (Vanilla's `onBlockAdded`
 block-update consequences - rail reshaping, torch support - are outside the placement port; see
 `handoff.md`.)
 
@@ -333,7 +337,7 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | Terrain | `crates/mc-worldgen/src/terrain.rs` + `tools/test_terrain_parity.py` (+ `TerrainOracle.java`) | ✅ `terrain_parity` green: 16,191 lines match (full base terrain: shape + surface, incl. Mesa) |
 | Caves/ravines | `crates/mc-worldgen/src/cave.rs` + `tools/test_caves_parity.py` (+ `CaveOracle.java`) | ✅ `caves_parity` green: 46,260 lines match (`MapGenBase` + `MapGenCaves` + `MapGenRavine`, caves/ravines/both/base) |
 | Chunk artefacts | `crates/mc-worldgen/src/chunk.rs` + `tools/test_worldgen_parity.py` (+ `WorldgenOracle.java`) | ✅ `worldgen_parity` green: 7,770 lines match (blocks + biome array + height map; pre-decoration chunk) |
-| Mineshafts (layout) | `crates/mc-worldgen/src/structure/` (mod + `mineshaft.rs`) + `tools/test_structures_parity.py` (+ `StructuresOracle.java`) | ✅ `structures_parity` green: 2,702 lines match (starts + pieces + boxes; block placement pending) |
+| Mineshafts + scattered features + monuments + nether fortresses + villages + strongholds (layout) | `crates/mc-worldgen/src/structure/` (mod + `mineshaft.rs` + `scattered.rs` + `monument.rs` + `netherbridge.rs` + `village.rs` + `stronghold.rs`) + `tools/test_structures_parity.py` (+ `StructuresOracle.java`) | ✅ `structures_parity` green: 10,533 lines match (all six generators' starts, pieces, boxes; block placement pending) |
 | Loot + enchantment RNG | `crates/mc-worldgen/src/loot.rs` + `tools/test_loot_parity.py` (+ `LootOracle.java`) | ✅ `loot_parity` green: 695 lines match (registry + `buildEnchantmentList` + `generateChestContents`; unblocks chest placement) |
 | Mineshaft block placement | `crates/mc-worldgen/src/structure/placement.rs` + `tools/test_mineshaft_placement_parity.py` (+ `MineshaftPlacementOracle.java`) | ✅ `mineshaft_placement_parity` green: 3,598 lines match (3 seeds x 14 chunks, 426 structure blocks; curated corpus - see `handoff.md`) |
 | Java HashMap order | `crates/mc-core/src/jhash.rs` + `tools/test_jhash_parity.py` (+ `HashOrderOracle.java`) | ✅ `jhash_parity` green: 16 insertion orders / 301 keys match `keySet()` order (unblocks chest-enchantment RNG) |

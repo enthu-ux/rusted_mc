@@ -37,6 +37,11 @@ import net.minecraft.world.chunk.ChunkPrimer;
 import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.chunk.storage.IChunkLoader;
 import net.minecraft.world.gen.structure.MapGenMineshaft;
+import net.minecraft.world.gen.structure.MapGenNetherBridge;
+import net.minecraft.world.gen.structure.MapGenScatteredFeature;
+import net.minecraft.world.gen.structure.MapGenStronghold;
+import net.minecraft.world.gen.structure.MapGenVillage;
+import net.minecraft.world.gen.structure.StructureOceanMonument;
 import net.minecraft.world.gen.structure.StructureStart;
 import net.minecraft.world.storage.IPlayerFileData;
 import net.minecraft.world.storage.ISaveHandler;
@@ -72,6 +77,31 @@ public class StructuresOracle {
 
     /** `MapGenMineshaft` with its `structureMap` exposed (`protected` in `MapGenStructure`). */
     static class Probe extends MapGenMineshaft {
+        java.util.Map<Long, StructureStart> map() { return this.structureMap; }
+    }
+
+    /** `MapGenScatteredFeature`'s `structureMap` exposed. */
+    static class ScatteredProbe extends MapGenScatteredFeature {
+        java.util.Map<Long, StructureStart> map() { return this.structureMap; }
+    }
+
+    /** `StructureOceanMonument`'s `structureMap` exposed. */
+    static class MonumentProbe extends StructureOceanMonument {
+        java.util.Map<Long, StructureStart> map() { return this.structureMap; }
+    }
+
+    /** `MapGenNetherBridge`'s `structureMap` exposed. */
+    static class NetherProbe extends MapGenNetherBridge {
+        java.util.Map<Long, StructureStart> map() { return this.structureMap; }
+    }
+
+    /** `MapGenVillage`'s `structureMap` exposed. */
+    static class VillageProbe extends MapGenVillage {
+        java.util.Map<Long, StructureStart> map() { return this.structureMap; }
+    }
+
+    /** `MapGenStronghold`'s `structureMap` exposed. */
+    static class StrongholdProbe extends MapGenStronghold {
         java.util.Map<Long, StructureStart> map() { return this.structureMap; }
     }
 
@@ -152,31 +182,53 @@ public class StructuresOracle {
         TestWorld world = new TestWorld(new SaveHandler(), wi, provider, new Profiler(), false);
         provider.registerWorld(world);
 
-        Probe probe = new Probe();
+        Probe mineshafts = new Probe();
+        ScatteredProbe scattered = new ScatteredProbe();
+        MonumentProbe monuments = new MonumentProbe();
+        VillageProbe villages = new VillageProbe();
+        StrongholdProbe strongholds = new StrongholdProbe();
+        NetherProbe nether = new NetherProbe();
         StringBuilder sb = new StringBuilder();
         for (int i = 1; i + 1 < args.length; i += 2) {
             int cx = Integer.parseInt(args[i]);
             int cz = Integer.parseInt(args[i + 1]);
-            probe.generate(null, world, cx, cz, new ChunkPrimer());
+            mineshafts.generate(null, world, cx, cz, new ChunkPrimer());
+            scattered.generate(null, world, cx, cz, new ChunkPrimer());
+            monuments.generate(null, world, cx, cz, new ChunkPrimer());
+            villages.generate(null, world, cx, cz, new ChunkPrimer());
+            strongholds.generate(null, world, cx, cz, new ChunkPrimer());
+            nether.generate(null, world, cx, cz, new ChunkPrimer());
 
             sb.append("chunk ").append(cx).append(' ').append(cz).append('\n');
-            List<StructureStart> starts = new ArrayList<>();
-            for (StructureStart s : probe.map().values()) {
-                if (s.isSizeableStructure() && s.func_175788_a(new net.minecraft.world.ChunkCoordIntPair(cx, cz))) {
-                    int x0 = (cx << 4) + 8;
-                    int z0 = (cz << 4) + 8;
-                    if (s.getBoundingBox().intersectsWith(x0, z0, x0 + 15, z0 + 15)) {
-                        starts.add(s);
-                    }
-                }
-            }
-            starts.sort(Comparator.comparingInt(StructureStart::getChunkPosX)
-                    .thenComparingInt(StructureStart::getChunkPosZ));
-            for (StructureStart s : starts) {
-                dump(sb, s);
-            }
+            dumpMeeting(sb, mineshafts.map(), cx, cz);
+            dumpMeeting(sb, scattered.map(), cx, cz);
+            dumpMeeting(sb, monuments.map(), cx, cz);
+            dumpMeeting(sb, villages.map(), cx, cz);
+            dumpMeeting(sb, strongholds.map(), cx, cz);
+            dumpMeeting(sb, nether.map(), cx, cz);
         }
 
         System.out.print(sb);
+    }
+
+    /** Dumps the starts in `map` (one structure generator) whose box meets chunk `(cx, cz)`, sorted
+     *  by start chunk. The port mirrors this per-generator grouping (mineshafts, then temples). */
+    private static void dumpMeeting(
+            StringBuilder sb, java.util.Map<Long, StructureStart> map, int cx, int cz) {
+        List<StructureStart> starts = new ArrayList<>();
+        for (StructureStart s : map.values()) {
+            if (s.isSizeableStructure() && s.func_175788_a(new net.minecraft.world.ChunkCoordIntPair(cx, cz))) {
+                int x0 = (cx << 4) + 8;
+                int z0 = (cz << 4) + 8;
+                if (s.getBoundingBox().intersectsWith(x0, z0, x0 + 15, z0 + 15)) {
+                    starts.add(s);
+                }
+            }
+        }
+        starts.sort(Comparator.comparingInt(StructureStart::getChunkPosX)
+                .thenComparingInt(StructureStart::getChunkPosZ));
+        for (StructureStart s : starts) {
+            dump(sb, s);
+        }
     }
 }

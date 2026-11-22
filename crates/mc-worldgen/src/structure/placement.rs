@@ -435,6 +435,21 @@ pub fn add_component_parts(
         } => cross(&comp, world, chunk, *multiple_floors),
         PieceKind::MineshaftRoom { linked_rooms } => room(&comp, world, chunk, linked_rooms),
         PieceKind::MineshaftStairs => stairs(&comp, world, chunk),
+        // Scattered-feature block placement is not ported yet (layout only). Nothing reaches this
+        // arm today: `populate` only walks the registered mineshafts. Kept `true` (piece retained)
+        // so an accidental walk never silently drops a piece.
+        PieceKind::TempleDesertPyramid { .. }
+        | PieceKind::TempleJunglePyramid { .. }
+        | PieceKind::TempleSwampHut { .. } => true,
+        // Monument block placement is not ported yet (registration/layout only). Nothing reaches
+        // this arm today: `populate` only walks the registered mineshafts.
+        PieceKind::MonumentBuilding => true,
+        // Nether-fortress block placement is not ported yet (registration/layout only).
+        PieceKind::Nether { .. } => true,
+        // Village block placement is not ported yet (registration/layout only).
+        PieceKind::Village(_) => true,
+        // Stronghold block placement is not ported yet (registration/layout only).
+        PieceKind::Stronghold(_) => true,
     }
 }
 

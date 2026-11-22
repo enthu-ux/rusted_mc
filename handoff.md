@@ -18,11 +18,13 @@ commit/push.
 ## At a glance
 
 - **Milestone:** M1 `worldgen_seed` (in progress). Parity-gated so far: base terrain, caves/ravines,
-  the canonical chunk (biome array + height map), mineshaft **layout**, `java.util.HashMap` order, the
-  loot + enchantment RNG, and mineshaft **block placement** (the `populate` half; a curated corpus).
-- **Next increment:** `1d` the other structures' layouts (village / stronghold / scattered feature /
-  ocean monument / nether bridge), then decoration (`BiomeDecorator` + feature generators).
-- **Baseline:** `scripts/verify.ps1` -> **12/12** harnesses, **80** unit tests, fmt clean.
+  the canonical chunk (biome array + height map), **all six structure layouts** (mineshaft,
+  scattered-feature temple/hut, ocean monument, nether fortress, village, stronghold),
+  `java.util.HashMap` order, the loot + enchantment RNG, and mineshaft **block placement** (the
+  `populate` half; a curated corpus).
+- **Next increment:** `1d` structure layouts are **complete** -> decoration (`BiomeDecorator` +
+  feature generators).
+- **Baseline:** `scripts/verify.ps1` -> **12/12** harnesses, **100** unit tests, fmt clean.
 
 ---
 
@@ -54,10 +56,11 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass (80 unit tests); `py tools/parity.py` reports
+Expected today: `cargo test` and `fmt` pass (100 unit tests); `py tools/parity.py` reports
 `12/12 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
 `biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 492; `caves_parity` 46,260;
-`worldgen_parity` 7,770; `structures_parity` 2,702; `jhash_parity` 16 orders / 301 keys;
+`worldgen_parity` 7,770; `structures_parity` 10,533 lines / 96 starts (mineshaft + scattered feature +
+monument + nether fortress + village + stronghold); `jhash_parity` 16 orders / 301 keys;
 `loot_parity` 25 enchantments / 28 cases = 695 lines; `mineshaft_placement_parity` 14 chunks = 3,598 lines).
 
 `tools/perf_baseline.py` is **manual** (not part of `verify`): it builds release binaries, runs the
@@ -104,7 +107,14 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   `mc-worldgen::chunk` (canonical chunk artefacts: biome array + height map, `light_opacity`
   table); `mc-worldgen::mapgen` (`MapGenBase` driver, shared by the carve passes and structures);
   `mc-worldgen::structure` (`StructureStart`/`Piece`/`BoundingBox` model + `mineshaft.rs`:
-  `MapGenMineshaft` registration and the whole piece layout); `mc-worldgen::loot`
+  `MapGenMineshaft` registration and the whole piece layout + `scattered.rs`:
+  `MapGenScatteredFeature` registration and the desert/jungle temple + swamp-hut piece
+  constructors + `monument.rs`: `StructureOceanMonument` registration and the `MonumentBuilding`
+  start box + `netherbridge.rs`: a standalone `MapGenNetherBridge` (nether) with the full
+  `StructureNetherBridgePieces` weighted layout + `village.rs`: `MapGenVillage` with the weighted
+  `StructureVillagePieces` road/building tree, plus `StructureStart::sizeable` + `stronghold.rs`:
+  `MapGenStronghold` with `findBiomePosition` ring placement and the weighted `StructureStrongholdPieces`
+  tree; `mc-worldgen::loot`
   (`WeightedRandom`, `WeightedRandomChestContent.generateChestContents` + the 13-entry mineshaft list +
   `func_177629_a`, the `Enchantment` registry table + `EnchantmentHelper.mapEnchantmentData`/
   `buildEnchantmentList`/`addRandomEnchantment` on the book path); `mc-worldgen::structure::placement`
@@ -122,9 +132,10 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 - Harnesses green: `random_parity`, `noise_parity`, `noise_batch_parity`, `biome_layer_parity`,
   `terrain_parity` (full base terrain), `math_parity`, `caves_parity` (caves + ravines),
   `worldgen_parity` (canonical chunk: blocks + biome array + height map),
-  `structures_parity` (mineshaft layout), `jhash_parity` (`java.util.HashMap` iteration order),
-  `loot_parity` (loot + enchantment RNG), `mineshaft_placement_parity` (mineshaft block placement).
-  Unit tests: 57 `mc-worldgen`, 13 `mc-core`, 10 `mc-perf`.
+  `structures_parity` (all six structure layouts: mineshaft, temple/hut, monument, fortress, village,
+  stronghold), `jhash_parity` (`java.util.HashMap` iteration order), `loot_parity` (loot + enchantment
+  RNG), `mineshaft_placement_parity` (mineshaft block placement).
+  Unit tests: 77 `mc-worldgen`, 13 `mc-core`, 10 `mc-perf`.
 - Notable vanilla quirks encoded: `GenLayerHills.field_151628_d` unseeded top Zooms; Mesa cache
   `Random(0)` + `func_150619_a` orange-loop `+2` step; `ChunkPrimer` x/z transposition in
   `generateBiomeTerrain`; caves and ravines reach biomes through the **biome cache** (index
@@ -137,16 +148,20 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 ## Next steps (prioritized, each with a pass condition)
 
-**Recommended next: `1d` - the other structures' layouts (the placement infrastructure is in place);
-then decoration.** P0's remaining items need a running binary.
+**Recommended next: decoration (`BiomeDecorator` + feature generators) - the remaining half of M1.**
+P0's remaining items need a running binary.
 
 1. **`worldgen_seed` — M1 (in progress).** `mc-core::jmath` + `math_parity` done; base terrain done;
    caves + ravines done (`cave.rs` + `caves_parity`); canonical chunk artefacts done (`chunk.rs` +
    `worldgen_parity`); mineshaft **layout** done (`structure/` + `structures_parity`); the **loot +
    enchantment RNG** done (`loot.rs` + `loot_parity`); mineshaft **block placement** done
-   (`structure/placement.rs` + `mineshaft_placement_parity`). Remaining: (b2) the other structures'
-   layouts (village / stronghold / scattered feature / ocean monument / nether bridge) - the harness
-   already generalises (dump vanilla's structure NBT, then place); (c) decoration (`BiomeDecorator` +
+   (`structure/placement.rs` + `mineshaft_placement_parity`); scattered-feature (temple/hut) **layout**
+   done (`structure/scattered.rs` + `structures_parity`); ocean-monument **layout** done
+   (`structure/monument.rs` + `structures_parity`); nether-fortress **layout** done
+   (`structure/netherbridge.rs` + `structures_parity`); village **layout** done
+   (`structure/village.rs` + `structures_parity`); stronghold **layout** done
+   (`structure/stronghold.rs` + `structures_parity`). All six structure layouts are ported; remaining:
+   (c) decoration (`BiomeDecorator` +
    feature generators - biggest); (d) structure/decoration blocks, once the placement infrastructure
    exists. Then the full chunk (blocks + metadata + biome + heightmap) for the Gate-C seeds/chunks is
    reachable and `worldgen_parity` can take the Gate-C name.
@@ -189,8 +204,12 @@ then decoration.** P0's remaining items need a running binary.
    reshapes rails (`BlockRailBase.updateState`) and drops unsupported torches (`BlockTorch.checkForDrop`)
    as it places them - block-update semantics, not placement; the corpus excludes fixtures that trigger
    them (see "Open threads"), and multi-start/order-dependent boxes are excluded (HashMap order).
-   1d. **next:** the other structures' layouts (village / stronghold / scattered / monument / nether
-   bridge); then decoration (`BiomeDecorator` + feature generators - biggest). Then the full chunk
+   1d. **structure layouts complete:** ✅ **scattered feature**, ✅ **ocean monument**, ✅ **nether
+   fortress**, ✅ **village**, ✅ **stronghold** (`MapGenStronghold`: `findBiomePosition` ring placement +
+   the weighted `StructureStrongholdPieces` tree + the portal-room re-roll loop). Shared infra from
+   these: `terrain::BiomeLookup` (`getBiomeGenerator` / `areBiomesViable` / `findBiomePosition`),
+   `structure::component_box` / `StructureStart::{mark_available_height,set_random_height}`. **Next:**
+   decoration (`BiomeDecorator` + feature generators - biggest). Then the full chunk
    (blocks + metadata + biome + heightmap) for the Gate-C seeds/chunks is reachable and
    `worldgen_parity` can take the Gate-C name.
    *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
@@ -273,9 +292,58 @@ then decoration.** P0's remaining items need a running binary.
   `+/-80` window test always measures from the root; `Cross`/`Corridor` bounding-box helpers draw RNG
   (`nextInt(4)` / `nextInt(3)+2`+loop) *before* the intersection test.
 - **Structure coverage gaps:** `spawnerPlaced` (`hps`) is only ever set during block placement, so the
-  layout corpus always has `hps=0`; villages/strongholds/scattered features/monuments and the nether
-  bridge are unported; a chunk's `structureMap` is `HashMap`-ordered in vanilla, so the dump sorts by
-  chunk coordinate (never rely on map order).
+  layout corpus always has `hps=0`; **all six structure layouts are ported** (mineshaft, scattered
+  feature, ocean monument, nether fortress, village, stronghold); a chunk's `structureMap` is
+  `HashMap`-ordered in vanilla, so the dump sorts by chunk coordinate (never rely on map order).
+- **Scattered features (ported):** `mc-worldgen::structure::scattered`. `MapGenScatteredFeature` is
+  grid-placed by `World.setRandomSeed(gx, gz, 14357617)` (a pure function of the world seed), then the
+  biome at `chunk*16+8` (the `Voronoi` biome-index layer, via `WorldChunkManager.getBiomeGenerator`)
+  decides desert/jungle/swamp; each piece's constructor draws one `nextInt(4)` for
+  `EnumFacing.Plane.HORIZONTAL` (`{NORTH, EAST, SOUTH, WEST}`), and the box's X/Z extents swap for an
+  east/west orientation. There is no `buildComponent` recursion. `structures_parity` grew swamp-hut
+  (seed 0), desert-pyramid (seed -7) and jungle-pyramid (seed 12345) fixtures (the start is reported
+  by a *neighbouring* chunk, since `generateStructure`'s box is `chunk*16 + 8`); block placement is
+  still unported.
+- **Ocean monuments (ported):** `mc-worldgen::structure::monument`. Grid-placed by
+  `World.setRandomSeed(gx, gz, 10387313)` (averaging two `nextInt(27)` offsets), requiring a deep-ocean
+  `getBiomeGenerator` and `areBiomesViable(.., 29, {ocean, deepOcean, river, frozenOcean, frozenRiver})`.
+  `StartMonument.func_175789_b` re-seeds the `MapGenBase` stream with the world seed and adds a single
+  `MonumentBuilding` whose box is the fixed 58x23x58 slab `(chunk*16-21, 39, ..)`; the building's room
+  graph lives in a private list (not the start's components), so it is **not** part of the serialized
+  layout and is deferred to the placement port. `terrain::BiomeLookup` now provides both
+  `getBiomeGenerator` (`index_at`) and `areBiomesViable` for the remaining structures.
+- **Nether fortresses (ported):** `mc-worldgen::structure::netherbridge`. This runs in the nether
+  (`ChunkProviderHell`), not the overworld, so it is a **standalone** generator (not a `TerrainGen`
+  field); the `structures_probe` drives it separately and the overworld `chunk.structures` never
+  contains fortresses. `canSpawnStructureAtCoords` re-seeds the `MapGenBase` stream with
+  `(chunk>>4) ^ ((chunk>>4)<<4) ^ worldSeed` (no biome lookup). The layout is the full
+  `StructureNetherBridgePieces` weighted graph (primary/secondary `PieceWeight` lists, 5-attempt
+  weighted pick, `End` fallback); vanilla quirk replicated: a child outside the 112-block window builds
+  an `End` purely for its RNG draw and discards it. The root's pending list is drained in random order,
+  then `StructureStart::set_random_height(48, 70)` drops the structure. All 15 piece kinds are
+  exercised; block placement is still unported.
+- **Villages (ported):** `mc-worldgen::structure::village`. Grid-placed by
+  `World.setRandomSeed(gx, gz, 10387312)` + `areBiomesViable(.., 0, {plains, desert, savanna})`. The
+  layout is `StructureVillagePieces`: a `Start` (a `Well`) draws the weighted piece list, four roads
+  leave the well, roads spawn buildings along their length (and occasionally branch), and each piece
+  is gated by `areBiomesViable` around its centre (a rejected piece still consumes its RNG draws).
+  Two lists are drained in random order (roads then buildings); `StructureStart::sizeable` mirrors
+  `isSizeableStructure` (a start needs > 2 non-road pieces). 12/13 piece kinds are exercised (only
+  `Well`/`ViW` is unreachable - villages only create the `Start`, which extends `Well`); block
+  placement is still unported.
+- **Strongholds (ported):** `mc-worldgen::structure::stronghold`. Placement is a lazily computed
+  3-position ring: `Random(worldSeed)` -> `(1.25*spread + nextDouble()) * 32*spread` at 120° steps, each
+  refined by `WorldChunkManager.findBiomePosition(.., 112, {biomes with minHeight > 0}, rand)`; the
+  chunk spawns iff it is one of those 3 chunks. The layout is `StructureStrongholdPieces`: a `Stairs2`
+  root draws a weighted piece (`func_175955_b`, 5 attempts, `Corridor` fallback) and grows via
+  `getNextComponent{Normal,X,Z}`; `getStructureStart` re-rolls the whole start until a `PortalRoom`
+  exists; `StructureStart::mark_available_height(10)` drops it under sea level. Every piece serializes
+  `EntryDoor` (all four door kinds exercised). Vanilla quirk replicated: the `RightTurn` weight
+  dispatches through `LeftTurn.func_175867_a`, which builds a **`LeftTurn`** (so `SHRT` is never
+  produced). All reachable piece kinds are exercised; block placement is still unported.
+  **Caveat:** the ring uses Java `Math.cos`/`Math.sin` (fdlibm); the port uses Rust's `f64::cos`/`sin`,
+  which is exact for the corpus (a 1-ULP difference could only flip a `round` at an exact `.5`
+  boundary).
 - **Java `HashMap` iteration order is a live parity dependency:** `mc-core::jhash` models it
   (verified: 16 insertion orders / 301 keys, including the `treeifyBin` early resize at the 9th
   colliding key). Two consumers:
@@ -516,3 +584,89 @@ then decoration.** P0's remaining items need a running binary.
   torches (`BlockTorch.checkForDrop`) while placing; those are block-update semantics, so the corpus
   excludes fixtures that trigger them (see "Open threads"). `verify.ps1`: **12/12** harnesses. Next
   session: `1d` the other structures' layouts, then decoration.
+- **2026-11-22 - session 14 (1d: scattered feature).** Ported `MapGenScatteredFeature` (desert/jungle
+  temple + swamp hut) as the first of `1d`'s "other structures". New
+  `crates/mc-worldgen/src/structure/scattered.rs`: the grid placement
+  (`World.setRandomSeed(gx, gz, 14357617)` + two `nextInt(24)` offsets), the biome test
+  (`WorldChunkManager.getBiomeGenerator` at `chunk*16 + 8`, i.e. the `Voronoi` biome-index layer -
+  added `terrain::biome_index_at`), and the single-piece `Start` (`ComponentScatteredFeaturePieces.
+  {DesertPyramid,JunglePyramid,SwampHut}`). `structure/mod.rs` gained the three `Temple*` `PieceKind`s
+  (size + `HPos` + the subclass booleans); `placement.rs`/`mineshaft.rs` got no-op arms (temple block
+  placement is still unported). Wired through `GenOptions.scattered_features` (on in `vanilla()`),
+  `TerrainGen::{generate_chunk}` and `GeneratedChunk.structures` (now `[mineshafts..., temples...]`,
+  each group sorted); `structures_probe` prints the temple NBT (`Width`/`Height`/`Depth`/`HPos` +
+  booleans). Generalised `StructuresOracle` + `structures_probe` to dump mineshafts *and* temples per
+  chunk, and grew `tools/test_structures_parity.py` with temple fixtures (swamp hut: seeds 0/12345;
+  desert pyramid: seed -7; jungle pyramid: seed 12345) plus a per-seed "at least one start of each
+  kind" guard: **3,360 lines match** (3 seeds x 22 chunks, 33 starts; all three piece kinds). 5 new
+  golden unit tests (**85 total**). A throwaway `TempleScan.java` (in gitignored `.local/`) found the
+  fixtures; vanilla's `Vec`/box layout is unchanged elsewhere (registration writes no blocks), so every
+  other harness is untouched. `verify.ps1`: **12/12**. Next session: `1d` continues (village /
+  stronghold / ocean monument / nether bridge), then decoration.
+- **2026-11-22 - session 15 (1d: ocean monument).** Second of `1d`'s "other structures":
+  `StructureOceanMonument`. New `crates/mc-worldgen/src/structure/monument.rs` - the grid placement
+  (`World.setRandomSeed(gx, gz, 10387313)` + averaged `nextInt(27)` offsets), the biome gate
+  (deep ocean via `getBiomeGenerator`, plus `areBiomesViable(.., 29, ...)`), and `StartMonument`
+  (re-seed with the world seed, `EnumFacing.Plane.HORIZONTAL` orientation, one `MonumentBuilding`).
+  Key scope finding: `MonumentBuilding` keeps its room graph in a **private** list walked by
+  `addComponentParts`, so the *serialized* layout is a single fixed 58x23x58 box - the room graph is
+  placement-only and deferred. Added `terrain::BiomeLookup` (`index_at` = `getBiomeGenerator`,
+  `are_viable` = `areBiomesViable`) shared by the remaining structures; `structure/mod.rs` gained the
+  `MonumentBuilding` piece kind; `GenOptions.monuments` + `worldgen.monuments` span + `chunk.structures`
+  union. Generalised `StructuresOracle` + probe to a third generator and grew `structures_parity` with
+  monument fixtures (seed 0: (77,-50),(86,-12); seed 12345: (-695,458); seed -7: (-40,-23),(-28,21))
+  and a per-seed "each of the three kinds" guard: **3,815 lines match** (3 seeds x 27 chunks, 42
+  starts). 3 new golden unit tests (**88 total**). A throwaway `MonumentScan.java` found the fixtures.
+  `verify.ps1`: **12/12**. Next session: `1d` continues (village / stronghold / nether bridge), then
+  decoration.
+- **2026-11-22 - session 16 (1d: nether fortress).** Third of `1d`'s "other structures":
+  `MapGenNetherBridge`. New `crates/mc-worldgen/src/structure/netherbridge.rs` - a **standalone**
+  generator (the nether runs it via `ChunkProviderHell`, not the overworld `TerrainGen`; the probe
+  drives it separately). `canSpawnStructureAtCoords` re-seeds the `MapGenBase` stream with
+  `(chunk>>4) ^ ((chunk>>4)<<4) ^ worldSeed` and rolls `nextInt()` / `nextInt(3)` / two conditional
+  `nextInt(8)`. The layout is the full `StructureNetherBridgePieces` weighted graph: primary/secondary
+  `PieceWeight` lists (`structure/mod.rs` gained `NetherKind` + a `PieceKind::Nether` carrying the
+  serialized `Chest`/`Seed`/`Mob`), a 5-attempt weighted pick (`func_175871_a`) falling back to `End`,
+  `getNextComponent{Normal,X,Z}` offsets, and the root's pending list drained in random order. Shared
+  helpers added: `structure::component_box` (`getComponentToAddBoundingBox`) and
+  `StructureStart::set_random_height(48,70)`. Vanilla quirk replicated: a child outside the 112-block
+  window builds an `End` purely for its RNG draw and **discards** it. Generalised `StructuresOracle` +
+  probe to a fourth generator and grew `structures_parity` with fortress fixtures + a four-kind
+  per-seed guard: **6,589 lines match** (3 seeds x 33 chunks, 64 starts; all 15 nether piece kinds
+  exercised). 4 new unit tests (**92 total**). A throwaway `NetherScan.java` found the origins.
+  `verify.ps1`: **12/12**. Next session: `1d` continues (village / stronghold), then decoration.
+- **2026-11-22 - session 17 (1d: village).** Fourth of `1d`'s "other structures": `MapGenVillage`.
+  New `crates/mc-worldgen/src/structure/village.rs` - grid placement
+  (`World.setRandomSeed(gx, gz, 10387312)` + two `nextInt(24)` offsets) + `areBiomesViable(.., 0,
+  {plains, desert, savanna})`; the weighted `StructureVillagePieces` layout (`getStructureVillageWeightedPieceList`,
+  `func_176067_c` weighted selection, `Well`/`Path` `buildComponent`, `func_176066_d`/`func_176069_e`
+  with the per-piece 112-block window + `areBiomesViable` gate, roads-then-buildings drain loop).
+  `structure/mod.rs` gained `VillageKind` + a `PieceKind::Village(VillagePiece)` (the `Village` base's
+  `HPos`/`VCount`/`Desert` + `CA..CD` crops / `Chest` / `Terrace` / `T`+`C` / `Length`) and
+  `StructureStart::sizeable` (villages need > 2 non-road pieces). Wired through `GenOptions.villages` +
+  `worldgen.villages` span + the `chunk.structures` union (mineshaft, scattered, monument, village).
+  Generalised `StructuresOracle` + probe to a fifth generator and grew `structures_parity` with village
+  fixtures + a five-kind per-seed guard: **7,543 lines match** (3 seeds x 39 chunks, 76 starts; 12/13
+  village piece kinds - only `ViW` is unreachable - and a desert village exercises `Desert=1`). 4 new
+  unit tests (**96 total**). A throwaway
+  `VillageScan.java` found the origins; one fixture needed a neighbour chunk (the well's own chunk can
+  miss the box). `verify.ps1`: **12/12**. Next session: `1d` finishes with the stronghold, then
+  decoration.
+- **2026-11-22 - session 18 (1d: stronghold - structure layouts complete).** The last of `1d`'s
+  structures: `MapGenStronghold`. New `crates/mc-worldgen/src/structure/stronghold.rs` - the lazily
+  computed 3-position ring (`Random(worldSeed)` -> `(1.25*spread + nextDouble())*32*spread` at 120°,
+  refined by `findBiomePosition(.., 112, strongholdBiomes, rand)`); added
+  `BiomeLookup::find_biome_position` + `terrain::STRONGHOLD_BIOMES` (registered biomes with
+  `minHeight > 0`). The layout is the weighted `StructureStrongholdPieces` (`PIECE_WEIGHTS` with the
+  Library/PortalRoom depth gates, `func_175955_b` 5-attempt selection with the one-shot
+  `strongComponentType` and a `Corridor` fallback), plus `getStructureStart`'s re-roll-until-PortalRoom
+  loop and `mark_available_height(10)`. `structure/mod.rs` gained `StrongholdKind`, `Door` (the
+  `EntryDoor` NBT string) and a `PieceKind::Stronghold(StrongholdPiece)` carrying `Steps`/`Chest`/
+  `leftLow..`/`Tall`/`Mob`/`Type`/`Source`/`Left`+`Right`. **Found a vanilla quirk:** the `RightTurn`
+  weight dispatches through `LeftTurn.func_175867_a`, which builds a **`LeftTurn`** - so `SHRT` is
+  never produced (replicated). Generalised `StructuresOracle` + probe to a sixth generator and grew
+  `structures_parity` with the 9 ring chunks + a six-kind per-seed guard: **10,533 lines match**
+  (3 seeds x 48 chunks, 96 starts; all 4 door kinds, 11 stronghold starts, all reachable piece kinds -
+  `SHRT` is the only exception). 4 new unit tests (**100 total**). A throwaway `StrongholdScan.java`
+  found the ring coords. `verify.ps1`: **12/12**. **`1d` structure layouts are complete**; next
+  session: decoration (`BiomeDecorator` + feature generators).

@@ -69,6 +69,133 @@ fn extras(piece: &Piece) -> String {
             vec![("Entrances", joined)]
         }
         PieceKind::MineshaftStairs => Vec::new(),
+        PieceKind::TempleDesertPyramid {
+            size,
+            h_pos,
+            chests,
+        } => vec![
+            ("Depth", size[2].to_string()),
+            ("HPos", h_pos.to_string()),
+            ("Height", size[1].to_string()),
+            ("Width", size[0].to_string()),
+            ("hasPlacedChest0", bit(chests[0]).to_string()),
+            ("hasPlacedChest1", bit(chests[1]).to_string()),
+            ("hasPlacedChest2", bit(chests[2]).to_string()),
+            ("hasPlacedChest3", bit(chests[3]).to_string()),
+        ],
+        PieceKind::TempleJunglePyramid {
+            size,
+            h_pos,
+            main_chest,
+            hidden_chest,
+            trap1,
+            trap2,
+        } => vec![
+            ("Depth", size[2].to_string()),
+            ("HPos", h_pos.to_string()),
+            ("Height", size[1].to_string()),
+            ("Width", size[0].to_string()),
+            ("placedHiddenChest", bit(*hidden_chest).to_string()),
+            ("placedMainChest", bit(*main_chest).to_string()),
+            ("placedTrap1", bit(*trap1).to_string()),
+            ("placedTrap2", bit(*trap2).to_string()),
+        ],
+        PieceKind::TempleSwampHut { size, h_pos, witch } => vec![
+            ("Depth", size[2].to_string()),
+            ("HPos", h_pos.to_string()),
+            ("Height", size[1].to_string()),
+            ("Width", size[0].to_string()),
+            ("Witch", bit(*witch).to_string()),
+        ],
+        PieceKind::MonumentBuilding => Vec::new(),
+        // Nether fortress pieces serialize `Chest` (corridors), `Seed` (End) or `Mob` (Throne).
+        PieceKind::Nether {
+            kind,
+            chest,
+            seed,
+            has_spawner,
+        } => match kind {
+            mc_worldgen::structure::NetherKind::Corridor
+            | mc_worldgen::structure::NetherKind::Corridor2 => {
+                vec![("Chest", bit(*chest).to_string())]
+            }
+            mc_worldgen::structure::NetherKind::End => vec![("Seed", seed.to_string())],
+            mc_worldgen::structure::NetherKind::Throne => {
+                vec![("Mob", bit(*has_spawner).to_string())]
+            }
+            _ => Vec::new(),
+        },
+        PieceKind::Village(v) => {
+            let mut pairs: Vec<(&str, String)> = vec![
+                ("HPos", v.h_pos.to_string()),
+                ("VCount", v.v_count.to_string()),
+                ("Desert", bit(v.desert).to_string()),
+            ];
+            match v.kind {
+                mc_worldgen::structure::VillageKind::Field1 => {
+                    pairs.push(("CA", v.crops[0].to_string()));
+                    pairs.push(("CB", v.crops[1].to_string()));
+                    pairs.push(("CC", v.crops[2].to_string()));
+                    pairs.push(("CD", v.crops[3].to_string()));
+                }
+                mc_worldgen::structure::VillageKind::Field2 => {
+                    pairs.push(("CA", v.crops[0].to_string()));
+                    pairs.push(("CB", v.crops[1].to_string()));
+                }
+                mc_worldgen::structure::VillageKind::House2 => {
+                    pairs.push(("Chest", bit(v.chest).to_string()));
+                }
+                mc_worldgen::structure::VillageKind::House4Garden => {
+                    pairs.push(("Terrace", bit(v.terrace).to_string()));
+                }
+                mc_worldgen::structure::VillageKind::WoodHut => {
+                    pairs.push(("T", v.table.to_string()));
+                    pairs.push(("C", bit(v.tall).to_string()));
+                }
+                mc_worldgen::structure::VillageKind::Path => {
+                    pairs.push(("Length", v.length.to_string()));
+                }
+                _ => {}
+            }
+            pairs
+        }
+        PieceKind::Stronghold(s) => {
+            let mut pairs: Vec<(&str, String)> =
+                vec![("EntryDoor", format!("\"{}\"", s.door.name()))];
+            match s.kind {
+                mc_worldgen::structure::StrongholdKind::Corridor => {
+                    pairs.push(("Steps", s.steps.to_string()));
+                }
+                mc_worldgen::structure::StrongholdKind::ChestCorridor => {
+                    pairs.push(("Chest", bit(s.chest).to_string()));
+                }
+                mc_worldgen::structure::StrongholdKind::Crossing => {
+                    pairs.push(("leftLow", bit(s.left_low).to_string()));
+                    pairs.push(("leftHigh", bit(s.left_high).to_string()));
+                    pairs.push(("rightLow", bit(s.right_low).to_string()));
+                    pairs.push(("rightHigh", bit(s.right_high).to_string()));
+                }
+                mc_worldgen::structure::StrongholdKind::Library => {
+                    pairs.push(("Tall", bit(s.tall).to_string()));
+                }
+                mc_worldgen::structure::StrongholdKind::PortalRoom => {
+                    pairs.push(("Mob", bit(s.has_spawner).to_string()));
+                }
+                mc_worldgen::structure::StrongholdKind::RoomCrossing => {
+                    pairs.push(("Type", s.room_type.to_string()));
+                }
+                mc_worldgen::structure::StrongholdKind::Stairs
+                | mc_worldgen::structure::StrongholdKind::Stairs2 => {
+                    pairs.push(("Source", bit(s.source).to_string()));
+                }
+                mc_worldgen::structure::StrongholdKind::Straight => {
+                    pairs.push(("Left", bit(s.expands_x).to_string()));
+                    pairs.push(("Right", bit(s.expands_z).to_string()));
+                }
+                _ => {}
+            }
+            pairs
+        }
     };
 
     pairs.sort_by(|a, b| a.0.cmp(b.0));
@@ -113,11 +240,17 @@ fn main() {
     }
 
     let mut gen = TerrainGen::new(seed);
+    let mut nether = mc_worldgen::structure::netherbridge::NetherBridge::new();
     let mut out = String::new();
     for &(cx, cz) in &chunks {
         let chunk = gen.generate_chunk(cx, cz, GenOptions::vanilla());
+        // Fortresses run in the nether, so they are a standalone generator.
+        nether.generate(seed, cx, cz);
         out.push_str(&format!("chunk {cx} {cz}\n"));
         for start in &chunk.structures {
+            dump(&mut out, start);
+        }
+        for start in &nether.starts_intersecting(cx, cz) {
             dump(&mut out, start);
         }
     }

@@ -136,6 +136,7 @@ fn start(rand: &mut JavaRandom, chunk_x: i32, chunk_z: i32, sea_level: i32) -> S
         chunk_z,
         bbox: StructureStart::update_bbox(&pieces),
         pieces,
+        sizeable: true,
     };
     start.mark_available_height(rand, sea_level, AVAILABLE_HEIGHT);
     start
@@ -392,6 +393,15 @@ fn build_component(
             component_type,
             parent_bbox,
         ),
+        // Temple pieces have no `buildComponent` recursion (their constructor is the whole layout).
+        // This dispatcher only drives mineshaft piece trees, so these are never reached.
+        PieceKind::TempleDesertPyramid { .. }
+        | PieceKind::TempleJunglePyramid { .. }
+        | PieceKind::TempleSwampHut { .. }
+        | PieceKind::MonumentBuilding
+        | PieceKind::Nether { .. }
+        | PieceKind::Village(_)
+        | PieceKind::Stronghold(_) => {}
     }
 }
 

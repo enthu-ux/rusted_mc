@@ -14,7 +14,11 @@ use crate::chunk::{self, GeneratedChunk};
 use crate::layer::BiomeLayers;
 use crate::noise::{Octaves, Perlin};
 use crate::structure::mineshaft::Mineshaft;
+use crate::structure::monument::OceanMonument;
 use crate::structure::placement::{self, ChunkWorld};
+use crate::structure::scattered::ScatteredFeature;
+use crate::structure::stronghold::Stronghold;
+use crate::structure::village::Village;
 use mc_core::random::JavaRandom;
 use std::f64::consts::PI;
 
@@ -299,6 +303,84 @@ fn java_round(v: f64) -> i32 {
     (v + 0.5).floor() as i64 as i32
 }
 
+/// `WorldChunkManager.getBiomeGenerator(x, z, ..)`: the biome-index (`Voronoi`) layer's biome at a
+/// block coordinate. The 16x16 block cache only rounds the coordinate down and indexes `x + z*16`.
+fn biome_index_at(voronoi: &mut crate::layer::Layer, bx: i32, bz: i32) -> i32 {
+    let cx = bx & !15;
+    let cz = bz & !15;
+    let ints = voronoi.get_ints(cx, cz, 16, 16);
+    ints[((bx & 15) + (bz & 15) * 16) as usize]
+}
+
+/// `WorldChunkManager`'s two biome queries the structure generators use: the biome-index (`Voronoi`)
+/// layer for `getBiomeGenerator`, and the generation (`genBiomes`) layer for `areBiomesViable`.
+pub struct BiomeLookup<'a> {
+    /// `var5[1]` - `biomeIndexLayer` (`getBiomeGenerator`).
+    pub voronoi: &'a mut crate::layer::Layer,
+    /// `var5[0]` - `genBiomes` (`areBiomesViable` / `findBiomePosition`).
+    pub biome: &'a mut crate::layer::Layer,
+}
+
+impl BiomeLookup<'_> {
+    /// `WorldChunkManager.getBiomeGenerator(x, z, ..)` at a block coordinate.
+    pub fn index_at(&mut self, bx: i32, bz: i32) -> i32 {
+        biome_index_at(self.voronoi, bx, bz)
+    }
+
+    /// `WorldChunkManager.areBiomesViable(x, z, radius, allowed)`: every generation-layer biome in
+    /// the `((x±radius)>>2)` grid must be in `allowed`.
+    pub fn are_viable(&mut self, x: i32, z: i32, radius: i32, allowed: &[i32]) -> bool {
+        let c0 = (x - radius) >> 2;
+        let d0 = (z - radius) >> 2;
+        let c1 = (x + radius) >> 2;
+        let d1 = (z + radius) >> 2;
+        let w = c1 - c0 + 1;
+        let h = d1 - d0 + 1;
+        let ints = self.biome.get_ints(c0, d0, w, h);
+        ints.iter().all(|id| allowed.contains(id))
+    }
+
+    /// `WorldChunkManager.findBiomePosition(x, z, radius, allowed, rand)`: reservoir sampling over
+    /// the generation-layer biomes in the `((x±radius)>>2)` grid, returning the block position
+    /// `(bx, 0, bz)` or `None`. `rand` is the caller's (world-seed) `Random`.
+    pub fn find_biome_position(
+        &mut self,
+        x: i32,
+        z: i32,
+        radius: i32,
+        allowed: &[i32],
+        rand: &mut mc_core::random::JavaRandom,
+    ) -> Option<(i32, i32)> {
+        let c0 = (x - radius) >> 2;
+        let d0 = (z - radius) >> 2;
+        let c1 = (x + radius) >> 2;
+        let d1 = (z + radius) >> 2;
+        let w = c1 - c0 + 1;
+        let h = d1 - d0 + 1;
+        let ints = self.biome.get_ints(c0, d0, w, h);
+        let mut pos: Option<(i32, i32)> = None;
+        let mut count = 0;
+        for (i, &id) in ints.iter().enumerate() {
+            let i = i as i32;
+            let px = (c0 + i % w) << 2;
+            let pz = (d0 + i / w) << 2;
+            if allowed.contains(&id) && (pos.is_none() || rand.next_int_bound(count + 1) == 0) {
+                pos = Some((px, pz));
+                count += 1;
+            }
+        }
+        pos
+    }
+}
+
+/// `MapGenStronghold.field_151546_e`: every registered `BiomeGenBase` with `minHeight > 0` (the
+/// stronghold placement candidates). Ids are base `0..=39` plus the registered mutations.
+pub const STRONGHOLD_BIOMES: &[i32] = &[
+    1, 2, 3, 4, 5, 8, 9, 12, 13, 14, 17, 18, 19, 20, 21, 22, 23, 25, 27, 28, 29, 30, 31, 32, 33,
+    34, 35, 36, 37, 38, 39, 129, 130, 131, 132, 133, 140, 149, 151, 155, 156, 157, 158, 160, 161,
+    162, 163, 164, 165, 166, 167,
+];
+
 /// `BiomeGenMesa.func_150619_a` — builds the 64-entry colored-clay table (its own `Perlin` offset
 /// noise is created by the caller from the same `Random`).
 fn build_clay_table(r: &mut JavaRandom) -> [u16; 64] {
@@ -372,6 +454,10 @@ pub struct TerrainGen {
     caves: Caves,
     ravines: Ravines,
     mineshafts: Mineshaft,
+    scattered: ScatteredFeature,
+    monuments: OceanMonument,
+    village: Village,
+    stronghold: Stronghold,
     lower_gen: Octaves,
     upper_gen: Octaves,
     main_gen: Octaves,
@@ -437,6 +523,10 @@ impl TerrainGen {
             caves: Caves::new(),
             ravines: Ravines::new(),
             mineshafts: Mineshaft::new(),
+            scattered: ScatteredFeature::new(),
+            monuments: OceanMonument::new(),
+            village: Village::new(),
+            stronghold: Stronghold::new(),
             lower_gen,
             upper_gen,
             main_gen,
@@ -472,6 +562,15 @@ pub struct GenOptions {
     /// `useMineShafts && mapFeaturesEnabled` - registers mineshaft starts (their blocks are written
     /// later, in `populate`).
     pub mineshafts: bool,
+    /// `useScatteredFeatures? && mapFeaturesEnabled` - registers desert/jungle temple and swamp-hut
+    /// starts (their blocks are written later, in `populate`).
+    pub scattered_features: bool,
+    /// `useOceanMonuments? && mapFeaturesEnabled` - registers ocean-monument starts.
+    pub monuments: bool,
+    /// `useVillages? && mapFeaturesEnabled` - registers village starts.
+    pub villages: bool,
+    /// `useStrongholds? && mapFeaturesEnabled` - registers stronghold starts.
+    pub strongholds: bool,
 }
 
 impl GenOptions {
@@ -481,6 +580,10 @@ impl GenOptions {
             caves: false,
             ravines: false,
             mineshafts: false,
+            scattered_features: false,
+            monuments: false,
+            villages: false,
+            strongholds: false,
         }
     }
 
@@ -490,6 +593,10 @@ impl GenOptions {
             caves: true,
             ravines: true,
             mineshafts: true,
+            scattered_features: true,
+            monuments: true,
+            villages: true,
+            strongholds: true,
         }
     }
 }
@@ -532,11 +639,56 @@ impl TerrainGen {
             self.mineshafts
                 .generate(self.seed, chunk_x, chunk_z, SEA_LEVEL);
         }
+        if opts.scattered_features || opts.monuments || opts.villages || opts.strongholds {
+            let seed = self.seed;
+            let TerrainGen {
+                scattered,
+                monuments,
+                village,
+                stronghold,
+                layers,
+                ..
+            } = self;
+            let mut lookup = crate::terrain::BiomeLookup {
+                voronoi: &mut layers.voronoi,
+                biome: &mut layers.biome,
+            };
+            if opts.scattered_features {
+                let _span = mc_perf::span("worldgen.temples");
+                scattered.generate(seed, chunk_x, chunk_z, &mut |bx, bz| {
+                    lookup.index_at(bx, bz)
+                });
+            }
+            if opts.monuments {
+                let _span = mc_perf::span("worldgen.monuments");
+                monuments.generate(seed, chunk_x, chunk_z, &mut lookup);
+            }
+            if opts.villages {
+                let _span = mc_perf::span("worldgen.villages");
+                village.generate(seed, chunk_x, chunk_z, &mut lookup);
+            }
+            if opts.strongholds {
+                let _span = mc_perf::span("worldgen.strongholds");
+                stronghold.generate(seed, chunk_x, chunk_z, &mut lookup);
+            }
+        }
 
         let _span = mc_perf::span("worldgen.artifacts");
         let height_map = chunk::height_map(&primer);
         let biomes = chunk::biome_array(&biome_ids);
-        let structures = self.mineshafts.starts_intersecting(chunk_x, chunk_z);
+        let mut structures = self.mineshafts.starts_intersecting(chunk_x, chunk_z);
+        if opts.scattered_features {
+            structures.extend(self.scattered.starts_intersecting(chunk_x, chunk_z));
+        }
+        if opts.monuments {
+            structures.extend(self.monuments.starts_intersecting(chunk_x, chunk_z));
+        }
+        if opts.villages {
+            structures.extend(self.village.starts_intersecting(chunk_x, chunk_z));
+        }
+        if opts.strongholds {
+            structures.extend(self.stronghold.starts_intersecting(chunk_x, chunk_z));
+        }
         GeneratedChunk {
             blocks: primer,
             biomes,
