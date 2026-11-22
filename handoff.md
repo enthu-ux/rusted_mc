@@ -92,7 +92,7 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 - **Inputs:** done. Official 1.8.9 jars (hash-checked), clean vanilla decompile (0 Forge refs),
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
-- **Workspace:** 11 crates; `cargo test` + `fmt` green (12/12 harnesses, 80 tests).
+- **Workspace:** 11 crates; `cargo test` + `fmt` green (13/13 harnesses, 110 tests).
 - **Performance (P0 substrate done):** `docs/performance-contract.md` + `docs/performance-baselines.md`;
   `mc-perf` (zero-dep: opt-in spans, `Stats`, `work::par_chunks_mut`, `alloc::CountingAllocator`) +
   `tools/perf_baseline.py`; spans on the worldgen hot path. First baseline: Rust base terrain
