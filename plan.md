@@ -194,7 +194,7 @@ mineshaft half is
 now ported (`mineshaft_placement_parity`) together with the RNG its chests consume (`loot_parity`:
 `WeightedRandomChestContent` + `EnchantmentHelper.buildEnchantmentList`); all six structure layouts
 are now ported, so the remaining work for Gate C is decoration (`decoration_parity` gates its ore,
-surface and vegetation layers; trees, springs and the per-biome overrides are pending). (Vanilla's
+surface, vegetation and tree layers; springs and the per-biome overrides are pending). (Vanilla's
 `onBlockAdded`
 block-update consequences - rail reshaping, torch support - are outside the placement port; see
 `handoff.md`.)

@@ -132,9 +132,31 @@ public class DecorationOracle {
             if (mode.contains("surface")) {
                 surface(this.world, rand, field);
             }
-            if (mode.contains("plant")) {
+            if (mode.contains("tree") || mode.contains("plant")) {
                 BiomeGenBase biome = this.world.getBiomeGenForCoords(field.add(16, 0, 16));
-                plants(this.world, rand, field, biome);
+                if (mode.contains("tree")) {
+                    trees(this.world, rand, field, biome);
+                }
+                if (mode.contains("plant")) {
+                    plants(this.world, rand, field, biome);
+                }
+            }
+        }
+    }
+
+    // ---- BiomeDecorator.genDecorations' tree loop ----
+
+    static void trees(World world, Random rand, BlockPos field, BiomeGenBase biome) {
+        int count = f(biome.theBiomeDecorator, "treesPerChunk");
+        if (rand.nextInt(10) == 0) count++;
+        for (int i = 0; i < count; i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            net.minecraft.world.gen.feature.WorldGenAbstractTree tree = biome.genBigTreeChance(rand);
+            tree.func_175904_e();
+            BlockPos pos = world.getHeight(field.add(x, 0, z));
+            if (tree.generate(world, rand, pos)) {
+                tree.func_180711_a(world, rand, pos);
             }
         }
     }

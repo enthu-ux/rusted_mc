@@ -485,6 +485,8 @@ pub struct TerrainGen {
     layers: BiomeLayers,
     /// `WorldGenBigMushroom.mushroomType` shared per biome (brown = true), keyed by biome id.
     big_mushroom_state: std::collections::BTreeMap<i32, bool>,
+    /// `WorldGenBigTree.heightLimit` shared per biome, keyed by biome id.
+    big_tree_state: std::collections::BTreeMap<i32, i32>,
 }
 
 impl TerrainGen {
@@ -553,6 +555,7 @@ impl TerrainGen {
             rand,
             layers: BiomeLayers::new(seed),
             big_mushroom_state: std::collections::BTreeMap::new(),
+            big_tree_state: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -772,6 +775,7 @@ impl TerrainGen {
                     opts,
                     &mut self.grass_color_noise,
                     &mut self.big_mushroom_state,
+                    &mut self.big_tree_state,
                 );
             }
         }

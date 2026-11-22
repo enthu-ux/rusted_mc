@@ -30,9 +30,10 @@ ORACLE_CLASSES = WORK / "oracle-classes"
 
 SEEDS = ["0", "12345", "-7"]
 CHUNKS = [(0, 0), (100, -50), (-37, 210), (-3, 0), (-48, -48), (6, 5)]
-MODES = ["ores", "surface", "plants", "ore_surface"]
+MODES = ["ores", "surface", "plants", "trees", "ore_surface"]
 ORE_IDS = {14, 15, 16, 21, 56, 73}
 PLANT_IDS = {31, 32, 37, 38, 39, 40, 81, 83, 86, 99, 100, 111}
+TREE_IDS = {17, 18, 161, 162, 106}
 # Each vegetation generator the corpus must actually exercise (else the fixture proves nothing).
 PLANT_SIGNATURE = {
     "tall grass": {31},
@@ -155,6 +156,9 @@ def main() -> int:
                 return 1
             if "plant" in mode and plant_count(vanilla) == 0:
                 print(f"FIXTURE ERROR: mode {mode} seed {seed}: no plant blocks placed")
+                return 1
+            if "tree" in mode and block_count(vanilla, TREE_IDS) == 0:
+                print(f"FIXTURE ERROR: mode {mode} seed {seed}: no tree blocks placed")
                 return 1
 
             (WORK / f"vanilla-{mode}-{seed}.txt").write_text(vanilla, encoding="utf-8")

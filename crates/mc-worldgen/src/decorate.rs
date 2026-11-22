@@ -20,6 +20,7 @@ use mc_core::jmath::{clamp_double, cos, floor_double, sin};
 use mc_core::random::JavaRandom;
 
 pub mod blocks;
+pub mod trees;
 
 use crate::noise::Perlin;
 use blocks::{
@@ -136,6 +137,7 @@ impl Default for DecorateSettings {
 pub struct DecorateOptions {
     pub ores: bool,
     pub surface: bool,
+    pub trees: bool,
     pub plants: bool,
 }
 
@@ -144,6 +146,7 @@ impl DecorateOptions {
         DecorateOptions {
             ores: false,
             surface: false,
+            trees: false,
             plants: false,
         }
     }
@@ -152,6 +155,7 @@ impl DecorateOptions {
         DecorateOptions {
             ores: true,
             surface: true,
+            trees: true,
             plants: true,
         }
     }
@@ -276,14 +280,28 @@ impl DecorateWorld {
         c.sky[chunk_index(x, y, z)] as i32
     }
 
-    /// `World.setBlockState` -> `Chunk.setBlockState`'s block write and height-map maintenance.
+    /// `World.setBlockState` -> `Chunk.setBlockState`'s block write, `breakBlock` side effect and
+    /// height-map/light maintenance.
     pub fn set(&mut self, x: i32, y: i32, z: i32, value: u16) {
         if !(0..256).contains(&y) {
             return;
         }
-        let Some(chunk) = self.chunks.get_mut(&(x >> 4, z >> 4)) else {
-            return;
+        let key = (x >> 4, z >> 4);
+        let old = {
+            let Some(chunk) = self.chunks.get(&key) else {
+                return;
+            };
+            let old = chunk.blocks[chunk_index(x, y, z)];
+            if old == value {
+                return;
+            }
+            old
         };
+        // `Chunk.setBlockState` calls the replaced block's `breakBlock` when the block id changes.
+        if (old >> 4) as i32 != (value >> 4) as i32 {
+            self.break_block((old >> 4) as i32, x, y, z);
+        }
+        let chunk = self.chunks.get_mut(&key).expect("chunk present");
         let idx = chunk_index(x, y, z);
         let old = chunk.blocks[idx];
         if old == value {
@@ -323,6 +341,32 @@ impl DecorateWorld {
                 chunk.relight(x & 15, y, z & 15);
             }
             let _ = old_opacity;
+        }
+    }
+
+    /// `BlockLeaves.breakBlock` (radius 1) / `BlockLog.breakBlock` (radius 4): flag nearby leaves
+    /// whose `CHECK_DECAY` is off (metadata bit 8).
+    fn break_block(&mut self, old_id: i32, x: i32, y: i32, z: i32) {
+        let r = if old_id == blocks::LEAVES || old_id == blocks::LEAVES2 {
+            1
+        } else if old_id == blocks::LOG || old_id == blocks::LOG2 {
+            4
+        } else {
+            return;
+        };
+        for dx in -r..=r {
+            for dy in -r..=r {
+                for dz in -r..=r {
+                    let (px, py, pz) = (x + dx, y + dy, z + dz);
+                    let id = self.get_id(px, py, pz);
+                    if id == blocks::LEAVES || id == blocks::LEAVES2 {
+                        let v = self.get(px, py, pz);
+                        if v & 8 == 0 {
+                            self.set(px, py, pz, v | 8);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -476,12 +520,16 @@ pub fn decorate(
     opts: DecorateOptions,
     grass_noise: &mut Perlin,
     big_mushroom: &mut BTreeMap<i32, bool>,
+    big_tree_height: &mut BTreeMap<i32, i32>,
 ) {
     if opts.ores {
         generate_ores(world, rand, biome_x, biome_z, settings);
     }
     if opts.surface {
         surface(world, rand, biome_x, biome_z);
+    }
+    if opts.trees {
+        trees_loop(world, rand, biome_x, biome_z, biome_id, big_tree_height);
     }
     if opts.plants {
         plants(
@@ -493,6 +541,53 @@ pub fn decorate(
             grass_noise,
             big_mushroom,
         );
+    }
+}
+
+/// The `treesPerChunk` count per biome (dumped from the game; the mutation ids carry their own
+/// decorator counts).
+pub fn biome_trees(biome_id: i32) -> i32 {
+    match biome_id {
+        1 | 2 | 16 | 17 | 25 | 26 | 29 | 37 | 39 | 129 | 165 | 167 => -999,
+        14 | 15 => -100,
+        4 | 18 | 27 | 28 => 10,
+        5 | 19 | 30 | 31 | 32 | 33 | 160 | 161 => 10,
+        6 => 2,
+        20 | 34 => 3,
+        21 | 22 => 50,
+        23 => 2,
+        35 | 36 => 1,
+        38 | 166 => 5,
+        132 => 6,
+        163 | 164 => 2,
+        _ => 0,
+    }
+}
+
+/// `BiomeDecorator.genDecorations`' tree loop (`WorldGenBigTree`'s shared `heightLimit` is per biome).
+fn trees_loop(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    bx: i32,
+    bz: i32,
+    biome_id: i32,
+    big_tree_height: &mut BTreeMap<i32, i32>,
+) {
+    let mut count = biome_trees(biome_id);
+    if rand.next_int_bound(10) == 0 {
+        count += 1;
+    }
+    for _ in 0..count {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let kind = trees::big_tree_chance(biome_id, rand);
+        let px = bx + x;
+        let pz = bz + z;
+        let py = world.height(px, pz);
+        let height_limit = big_tree_height.entry(biome_id).or_insert(0);
+        if trees::generate(world, rand, px, py, pz, kind, height_limit) {
+            trees::post_generate(world, rand, px, py, pz, kind);
+        }
     }
 }
 
@@ -1731,5 +1826,17 @@ mod tests {
         assert!(!mushroom_can_stay(&world, 3, 64, 7)); // open sky (light 15), stone below
         world.set(3, 63, 7, (blocks::MYCELIUM as u16) << 4);
         assert!(mushroom_can_stay(&world, 3, 64, 7)); // mycelium bypasses the light rule
+    }
+
+    /// The per-biome `treesPerChunk` counts (dumped from the game).
+    #[test]
+    fn biome_tree_counts_match_the_game() {
+        assert_eq!(biome_trees(4), 10); // forest
+        assert_eq!(biome_trees(21), 50); // jungle
+        assert_eq!(biome_trees(23), 2); // jungle edge
+        assert_eq!(biome_trees(1), -999); // plains
+        assert_eq!(biome_trees(37), -999); // mesa
+        assert_eq!(biome_trees(38), 5); // mesa plateau F
+        assert_eq!(biome_trees(132), 6); // flower forest
     }
 }

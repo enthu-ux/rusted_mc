@@ -21,12 +21,12 @@ commit/push.
   the canonical chunk (biome array + height map), **all six structure layouts** (mineshaft,
   scattered-feature temple/hut, ocean monument, nether fortress, village, stronghold),
   `java.util.HashMap` order, the loot + enchantment RNG, mineshaft **block placement** (the
-  `populate` half; a curated corpus), and **decoration layers 1-2** (`decorate.rs`: the block/world
+  `populate` half; a curated corpus), and **decoration layers 1-3** (`decorate.rs`: the block/world
   shim incl. column skylight + `ChunkProviderSettings` + ore generation + the surface
-  sand/clay/gravel loops + the vegetation generators).
-- **Next increment:** decoration (`BiomeDecorator` + feature generators) - layers 1-2 are done; the
-  remaining layers are trees, springs, and the per-biome `decorate` overrides.
-- **Baseline:** `scripts/verify.ps1` -> **13/13** harnesses, **106** unit tests, fmt clean.
+  sand/clay/gravel loops + the vegetation and tree generators).
+- **Next increment:** decoration (`BiomeDecorator` + feature generators) - layers 1-3 are done; the
+  remaining layers are springs and the per-biome `decorate` overrides.
+- **Baseline:** `scripts/verify.ps1` -> **13/13** harnesses, **109** unit tests, fmt clean.
 
 ---
 
@@ -58,13 +58,13 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass (106 unit tests); `py tools/parity.py` reports
+Expected today: `cargo test` and `fmt` pass (109 unit tests); `py tools/parity.py` reports
 `13/13 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
 `biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 492; `caves_parity` 46,260;
 `worldgen_parity` 7,770; `structures_parity` 10,533 lines / 96 starts (mineshaft + scattered feature +
 monument + nether fortress + village + stronghold); `jhash_parity` 16 orders / 301 keys;
 `loot_parity` 25 enchantments / 28 cases = 695 lines; `mineshaft_placement_parity` 14 chunks = 3,598 lines;
-`decoration_parity` 4 modes x 3 seeds x 6 chunks = 18,504 lines, decoration layers 1-2).
+`decoration_parity` 5 modes x 3 seeds x 6 chunks = 23,130 lines, decoration layers 1-3).
 
 `tools/perf_baseline.py` is **manual** (not part of `verify`): it builds release binaries, runs the
 Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `MC_SPANS=1`,
@@ -123,11 +123,11 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   `buildEnchantmentList`/`addRandomEnchantment` on the book path); `mc-worldgen::structure::placement`
   (the `StructureComponent` helpers + the four `StructureMineshaftPieces.addComponentParts` bodies +
   `MapGenStructure.generateStructure`/`StructureStart.generateStructure`), driven by
-  `TerrainGen::populate_mineshaft_chunk`; `mc-worldgen::decorate` (decoration layers 1-2: the
+  `TerrainGen::populate_mineshaft_chunk`; `mc-worldgen::decorate` (decoration layers 1-3: the
   `DecorateWorld`/`Chunk` block + height-map + column-skylight shim, `ChunkProviderSettings` defaults,
-  `WorldGenMinable` ore generation, the surface `WorldGenSand`/`WorldGenClay`/gravel loops, and the
-  vegetation generators - big mushrooms, flowers, tall grass, dead bush, waterlily, mushrooms, reeds,
-  pumpkin, cactus), driven by `TerrainGen::decorate_chunk`; `mc-perf`.
+  `WorldGenMinable` ore generation, the surface `WorldGenSand`/`WorldGenClay`/gravel loops, the
+  vegetation generators, and the tree generators incl. the `genBigTreeChance` hooks and the tree
+  `breakBlock` leaf-flagging), driven by `TerrainGen::decorate_chunk`; `mc-perf`.
 - **Docs/policy:** `plan.md` (§1-17), `README.md`, `AGENTS.md`, `docs/PHILOSOPHY.md`,
   `docs/ARCHITECTURE.md`, `docs/deviations.md`, `deviations.toml`, `docs/horizon-reuse.md`,
   `docs/horizon-performance-reuse.md`, `docs/performance-contract.md`, `docs/performance-baselines.md`,
@@ -142,8 +142,8 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   `structures_parity` (all six structure layouts: mineshaft, temple/hut, monument, fortress, village,
   stronghold), `jhash_parity` (`java.util.HashMap` iteration order), `loot_parity` (loot + enchantment
   RNG), `mineshaft_placement_parity` (mineshaft block placement), `decoration_parity` (decoration
-  layers 1-2: ores, surface, vegetation).
-  Unit tests: 83 `mc-worldgen`, 13 `mc-core`, 10 `mc-perf`.
+  layers 1-3: ores, surface, vegetation, trees).
+  Unit tests: 86 `mc-worldgen`, 13 `mc-core`, 10 `mc-perf`.
 - Notable vanilla quirks encoded: `GenLayerHills.field_151628_d` unseeded top Zooms; Mesa cache
   `Random(0)` + `func_150619_a` orange-loop `+2` step; `ChunkPrimer` x/z transposition in
   `generateBiomeTerrain`; caves and ravines reach biomes through the **biome cache** (index
@@ -224,22 +224,25 @@ P0's remaining items need a running binary.
    `worldgen_parity` can take the Gate-C name.
    *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
    and chunks.
-   1e. **decoration, layers 1-2 (done):** `mc-worldgen::decorate` - the `DecorateWorld` shim (the
-   `Chunk` block read/write, height map, precipitation, sections, `World.getTopSolidOrLiquidBlock`/
-   `getHeight`, and a **column skylight** model matching `Chunk.generateSkylightMap`/`relightBlock`
-   with `World.checkLight` off, which the oracle does too), `ChunkProviderSettings` defaults,
-   `WorldGenMinable` + `BiomeDecorator.generateOres`, the surface `WorldGenSand`/`WorldGenClay`/gravel
-   loops, and the vegetation generators (big mushrooms, flowers, tall grass, dead bush, waterlily,
-   brown/red mushrooms, reeds, pumpkin, cactus) with the per-biome counts + flower/grass hooks.
-   `TerrainGen::decorate_chunk` runs the four covering `populate` passes (the `+8` window, same driver
-   shape as mineshaft placement). Harness `decoration_parity` (`DecorationOracle.java` +
-   `examples/decoration_probe.rs`) with modes `ores | surface | plants | ore_surface`; the oracle is a
-   **guarded mirror** of `BiomeDecorator.genDecorations` (the feature groups are entangled by
-   unconditional RNG draws, so layers are isolated by mode) that reads the real biome counts/generators
-   via reflection. **Remaining decoration layers:** trees
-   (`WorldGenTrees`/`BigTree`/`Swamp`/taiga/savanna/jungle/...), springs (`WorldGenLiquids` - needs
-   the fluid `updateTick`, see "Open threads"), and the per-biome `decorate` overrides (double plants,
-   melons, vines, ice, boulders, emerald/monster-egg, desert wells).
+   1e. **decoration, layers 1-3 (done):** `mc-worldgen::decorate` - the `DecorateWorld` shim (the
+   `Chunk` block read/write incl. the replaced block's `breakBlock`, height map, precipitation,
+   sections, `World.getTopSolidOrLiquidBlock`/`getHeight`, and a **column skylight** model matching
+   `Chunk.generateSkylightMap`/`relightBlock` with `World.checkLight` off, which the oracle does too),
+   `ChunkProviderSettings` defaults, `WorldGenMinable` + `BiomeDecorator.generateOres`, the surface
+   `WorldGenSand`/`WorldGenClay`/gravel loops, the vegetation generators (big mushrooms, flowers, tall
+   grass, dead bush, waterlily, brown/red mushrooms, reeds, pumpkin, cactus) with the per-biome counts +
+   flower/grass hooks, and the tree generators (`decorate/trees.rs`: `WorldGenTrees`/`BigTree`/`Forest`/
+   `Taiga1`/`Taiga2`/`Savanna`/`Canopy`/`Swamp`/`Shrub`/`MegaJungle`/`MegaPine` + the `genBigTreeChance`
+   hooks and the stateful `BigTree.heightLimit`). `TerrainGen::decorate_chunk` runs the four covering
+   `populate` passes (the `+8` window, same driver shape as mineshaft placement). Harness
+   `decoration_parity` (`DecorationOracle.java` + `examples/decoration_probe.rs`) with modes
+   `ores | surface | plants | trees | ore_surface`; the oracle is a **guarded mirror** of
+   `BiomeDecorator.genDecorations` (the feature groups are entangled by unconditional RNG draws, so
+   layers are isolated by mode) that reads the real biome counts/generators via reflection. **Note:**
+   the tree port also implements the `BlockLeaves.breakBlock`/`BlockLog.breakBlock` leaf-`CHECK_DECAY`
+   flagging, which changes leaf metadata when a log replaces a leaf. **Remaining decoration layers:**
+   springs (`WorldGenLiquids` - needs the fluid `updateTick`, see "Open threads") and the per-biome
+   `decorate` overrides (double plants, melons, vines, ice, boulders, emerald/monster-egg, desert wells).
 2. **`light_parity`** - sky/block light arrays after edits match 1.8.9, with the engine **rewritten**
    for performance (plan §7/§13). Starts once `mc-world` chunks exist.
 3. **P0 remainder (when a binary exists):** install `mc-perf::alloc::CountingAllocator` (and
@@ -422,14 +425,18 @@ P0's remaining items need a running binary.
   `BiomeDecorator.genDecorations` (not the real method), because the feature groups are entangled:
   `generateOres` always runs, `treesPerChunk`/plant counts gate loops but the two mushroom `if`s, the
   unconditional 10-reeds loop and the tree `nextInt(10)` always draw, and the per-biome `decorate`
-  overrides add on top. So the layers are isolated by mode (`ores | surface | plants | ...`) and the
-  oracle re-implements only the enabled layers (cf. `MineshaftPlacementOracle`) - the draw sequences
-  still match vanilla for the enabled layers, and the oracle reads the real biome counts/generator
-  instances by reflection. **Skylight:** `BlockMushroom.canBlockStay` reads `World.getLight`, so the
-  port models `Chunk`'s column skylight (`generateSkylightMap`/`relightBlock`); the oracle disables
-  `World.checkLight` (both old oracles do, for speed), so horizontal skylight propagation is not part
-  of decoration parity - `light_parity` owns the flood-filled values. `WorldGenLiquids` (springs) needs
-  `BlockLiquid.updateTick` (`forceBlockUpdateTick`, fluid flow), so it waits for the fluid subsystem.
+  overrides add on top. So the layers are isolated by mode (`ores | surface | plants | trees | ...`) and
+  the oracle re-implements only the enabled layers (cf. `MineshaftPlacementOracle`) - the draw
+  sequences still match vanilla for the enabled layers, and the oracle reads the real biome
+  counts/generator instances by reflection. **Skylight:** `BlockMushroom.canBlockStay` reads
+  `World.getLight`, so the port models `Chunk`'s column skylight
+  (`generateSkylightMap`/`relightBlock`); the oracle disables `World.checkLight` (both old oracles do,
+  for speed), so horizontal skylight propagation is not part of decoration parity - `light_parity` owns
+  the flood-filled values. **`breakBlock`:** `DecorateWorld::set` mirrors `Chunk.setBlockState`'s
+  `breakBlock` for leaves/logs (`BlockLeaves`/`BlockLog` flag nearby leaves' `CHECK_DECAY`, which is
+  visible in the leaf metadata when a tree log replaces a leaf); other `breakBlock` bodies are no-ops
+  for decoration. `WorldGenLiquids` (springs) needs `BlockLiquid.updateTick`
+  (`forceBlockUpdateTick`, fluid flow), so it waits for the fluid subsystem.
 
 ## Session log (append-only)
 
@@ -744,4 +751,18 @@ P0's remaining items need a running binary.
   as loaded so `World.getHeight` works. `decoration_parity` gained a `plants` mode plus a
   signature-coverage guard (tall grass / flower / small mushroom / cactus / dead bush): **18,504 lines
   match** (4 modes x 3 seeds x 6 chunks). 4 new unit tests (**106 total**). `verify.ps1`: **13/13**.
-  Remaining decoration: trees, springs (fluid `updateTick`), per-biome `decorate` overrides.
+  Remaining decoration: trees, springs (fluid `updateTick`), per-biome `decorate` overrides.- **2026-11-22 - session 21 (decoration, layer 3: trees).** Ported the tree loop into
+  `crates/mc-worldgen/src/decorate/trees.rs`: `WorldGenTrees` (incl. jungle vines + cocoa),
+  `WorldGenForest` (birch), `WorldGenBigTree` (incl. its stateful shared `heightLimit` and its internal
+  `Random(nextLong())`), `WorldGenTaiga1`/`Taiga2`, `WorldGenSavannaTree`, `WorldGenCanopyTree`,
+  `WorldGenSwamp`, `WorldGenShrub`, and `WorldGenHugeTrees` (+ `WorldGenMegaJungle`/`WorldGenMegaPineTree`
+  incl. the podzol post). Added the per-biome `genBigTreeChance` hooks (forest type / taiga type /
+  jungle edge / hills / savanna / mesa / snow) and the `treesPerChunk` table (dumped from the game).
+  Two vanilla side effects the harness forced: (1) **`breakBlock`** - when a tree log replaces a leaf,
+  `Chunk.setBlockState` calls `BlockLeaves.breakBlock`, which flags nearby leaves `CHECK_DECAY`
+  (metadata bit 8); `DecorateWorld::set` now mirrors that for leaves/logs. (2) the mega-pine podzol
+  **5x5 blob** (`func_175933_b`), not just the single-column scan. `decoration_parity` gained a `trees`
+  mode + tree-presence guard: **23,130 lines match** (5 modes x 3 seeds x 6 chunks). 3 new unit tests
+  (**109 total**). `verify.ps1`: **13/13**. Remaining decoration: springs (fluid `updateTick`) and the
+  per-biome `decorate` overrides (double plants, melons, vines, ice, boulders, emerald/monster-egg,
+  desert wells).
