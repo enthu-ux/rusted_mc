@@ -180,8 +180,10 @@ Version-agnostic and directly address "don't reinvent the wheel":
 - Dump blocks + metadata + biome + heightmap canonically; hash.
 - **Pass:** `python tools/parity.py worldgen_seed` exits 0, **0 mismatched chunks**; on failure, names the **first differing block coordinate**.
 
-**Staged.** All six structure layouts are now ported; decoration is not yet, and both change blocks,
-so the Gate-C name stays reserved for the final chunk. The pieces that exist are pinned separately:
+**Staged.** All six structure layouts are now ported and decoration has begun (its ore + surface
+layers are parity-gated by `decoration_parity`); the rest of decoration is not yet, and it changes
+blocks, so the Gate-C name stays reserved for the final chunk. The pieces that exist are pinned
+separately:
 `worldgen_parity`
 (`tools/test_worldgen_parity.py`) covers blocks + metadata + biome + heightmap for the
 **pre-decoration** `provideChunk` output on these seeds/chunks (plus cave/ravine/mesa/ocean
@@ -191,8 +193,8 @@ nether fortresses, villages and strongholds. Structure *blocks* are written in `
 mineshaft half is
 now ported (`mineshaft_placement_parity`) together with the RNG its chests consume (`loot_parity`:
 `WeightedRandomChestContent` + `EnchantmentHelper.buildEnchantmentList`); all six structure layouts
-are now ported, so only decoration is still unported and the
-Gate-C harness waits for it. (Vanilla's `onBlockAdded`
+are now ported, so the remaining work for Gate C is decoration (`decoration_parity` gates its first
+layers; trees, vegetation, springs and the per-biome overrides are pending). (Vanilla's `onBlockAdded`
 block-update consequences - rail reshaping, torch support - are outside the placement port; see
 `handoff.md`.)
 

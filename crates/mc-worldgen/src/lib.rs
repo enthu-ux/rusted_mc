@@ -4,6 +4,7 @@
 
 pub mod cave;
 pub mod chunk;
+pub mod decorate;
 pub mod layer;
 pub mod loot;
 pub mod mapgen;

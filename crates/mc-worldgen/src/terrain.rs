@@ -11,6 +11,7 @@
 
 use crate::cave::{Caves, Ravines};
 use crate::chunk::{self, GeneratedChunk};
+use crate::decorate::{self, DecorateOptions, DecorateSettings, DecorateWorld};
 use crate::layer::BiomeLayers;
 use crate::noise::{Octaves, Perlin};
 use crate::structure::mineshaft::Mineshaft;
@@ -724,6 +725,36 @@ impl TerrainGen {
                     .for_each_start_meeting_mut(x0, z0, x0 + 15, z0 + 15, |start| {
                         placement::generate_structure(start, &mut world, &mut rand, &bbox);
                     });
+            }
+        }
+
+        world.chunk_blocks(chunk_x, chunk_z).to_vec()
+    }
+
+    /// `ChunkProviderGenerate.populate`'s decoration: the target chunk's blocks after the four
+    /// covering `BiomeDecorator.decorate` passes (the `+8`-offset window, see `crate::decorate`).
+    ///
+    /// Vanilla's pass order is chunk-load order; the port uses a fixed order
+    /// ((cx-1,cz-1), (cx-1,cz), (cx,cz-1), (cx,cz)) and corpora keep order-independent fixtures.
+    pub fn decorate_chunk(
+        &mut self,
+        chunk_x: i32,
+        chunk_z: i32,
+        opts: DecorateOptions,
+    ) -> Vec<u16> {
+        let mut world = DecorateWorld::new(SEA_LEVEL);
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let chunk = self.generate_chunk(chunk_x + dx, chunk_z + dz, GenOptions::vanilla());
+                world.insert_chunk(chunk_x + dx, chunk_z + dz, chunk.blocks);
+            }
+        }
+
+        let settings = DecorateSettings::default();
+        for a in [chunk_x - 1, chunk_x] {
+            for b in [chunk_z - 1, chunk_z] {
+                let mut rand = placement::populate_rand(self.seed, a, b);
+                decorate::decorate(&mut world, &mut rand, a * 16, b * 16, &settings, opts);
             }
         }
 
