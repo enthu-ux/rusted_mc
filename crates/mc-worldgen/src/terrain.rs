@@ -483,6 +483,8 @@ pub struct TerrainGen {
     mesa_f: Perlin,
     rand: JavaRandom,
     layers: BiomeLayers,
+    /// `WorldGenBigMushroom.mushroomType` shared per biome (brown = true), keyed by biome id.
+    big_mushroom_state: std::collections::BTreeMap<i32, bool>,
 }
 
 impl TerrainGen {
@@ -550,6 +552,7 @@ impl TerrainGen {
             mesa_f,
             rand,
             layers: BiomeLayers::new(seed),
+            big_mushroom_state: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -743,9 +746,11 @@ impl TerrainGen {
         opts: DecorateOptions,
     ) -> Vec<u16> {
         let mut world = DecorateWorld::new(SEA_LEVEL);
+        let mut biomes = std::collections::BTreeMap::new();
         for dx in -1..=1 {
             for dz in -1..=1 {
                 let chunk = self.generate_chunk(chunk_x + dx, chunk_z + dz, GenOptions::vanilla());
+                biomes.insert((chunk_x + dx, chunk_z + dz), chunk.biomes);
                 world.insert_chunk(chunk_x + dx, chunk_z + dz, chunk.blocks);
             }
         }
@@ -754,7 +759,20 @@ impl TerrainGen {
         for a in [chunk_x - 1, chunk_x] {
             for b in [chunk_z - 1, chunk_z] {
                 let mut rand = placement::populate_rand(self.seed, a, b);
-                decorate::decorate(&mut world, &mut rand, a * 16, b * 16, &settings, opts);
+                // `getBiomeGenForCoords(field.add(16, 0, 16))`: the generation biome at the corner,
+                // i.e. local (0, 0) of the next chunk (`biome_array` index `x + z * 16`).
+                let biome_id = biomes[&(a + 1, b + 1)][0] as i32;
+                decorate::decorate(
+                    &mut world,
+                    &mut rand,
+                    a * 16,
+                    b * 16,
+                    biome_id,
+                    &settings,
+                    opts,
+                    &mut self.grass_color_noise,
+                    &mut self.big_mushroom_state,
+                );
             }
         }
 

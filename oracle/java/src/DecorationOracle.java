@@ -20,7 +20,9 @@ import java.util.Map;
 import java.util.Random;
 
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockFlower;
 import net.minecraft.block.BlockStone;
+import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.EnumCreatureType;
 import net.minecraft.init.Bootstrap;
@@ -34,14 +36,21 @@ import net.minecraft.world.WorldProvider;
 import net.minecraft.world.WorldProviderSurface;
 import net.minecraft.world.WorldSettings;
 import net.minecraft.world.WorldType;
+import net.minecraft.world.biome.BiomeDecorator;
 import net.minecraft.world.biome.BiomeGenBase;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.gen.ChunkProviderGenerate;
 import net.minecraft.world.gen.ChunkProviderSettings;
+import net.minecraft.world.gen.GeneratorBushFeature;
+import net.minecraft.world.gen.feature.WorldGenBigMushroom;
 import net.minecraft.world.gen.feature.WorldGenClay;
+import net.minecraft.world.gen.feature.WorldGenDeadBush;
+import net.minecraft.world.gen.feature.WorldGenFlowers;
 import net.minecraft.world.gen.feature.WorldGenMinable;
+import net.minecraft.world.gen.feature.WorldGenPumpkin;
 import net.minecraft.world.gen.feature.WorldGenSand;
+import net.minecraft.world.gen.feature.WorldGenerator;
 
 public class DecorationOracle {
     static class SaveHandler implements net.minecraft.world.storage.ISaveHandler {
@@ -64,7 +73,11 @@ public class DecorationOracle {
         }
         protected IChunkProvider createChunkProvider() { return null; }
         protected int getRenderDistanceChunks() { return 0; }
-        @Override protected boolean isChunkLoaded(int x, int z, boolean allowEmpty) { return false; }
+        // During `populate` the pre-provided chunks are loaded (needed by `World.getHeight`); during
+        // generation the chunk is not yet in the stub, so the biome-provider path is taken.
+        @Override protected boolean isChunkLoaded(int x, int z, boolean allowEmpty) {
+            return this.chunkProvider != null && this.chunkProvider.chunkExists(x, z);
+        }
         void setProvider(IChunkProvider p) { this.chunkProvider = p; }
         @Override public boolean checkLight(BlockPos pos) { return false; }
     }
@@ -118,6 +131,170 @@ public class DecorationOracle {
             }
             if (mode.contains("surface")) {
                 surface(this.world, rand, field);
+            }
+            if (mode.contains("plant")) {
+                BiomeGenBase biome = this.world.getBiomeGenForCoords(field.add(16, 0, 16));
+                plants(this.world, rand, field, biome);
+            }
+        }
+    }
+
+    // ---- BiomeDecorator.genDecorations' vegetation section ----
+    //
+    // The counts and generator instances are read from the real `BiomeDecorator`, so the per-biome
+    // table and the shared `WorldGenBigMushroom` colour state are exactly the game's.
+
+    static int f(BiomeDecorator d, String name) {
+        try {
+            java.lang.reflect.Field field = BiomeDecorator.class.getDeclaredField(name);
+            field.setAccessible(true);
+            return field.getInt(d);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static WorldGenerator g(BiomeDecorator d, String name) {
+        try {
+            java.lang.reflect.Field field = BiomeDecorator.class.getDeclaredField(name);
+            field.setAccessible(true);
+            return (WorldGenerator) field.get(d);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static void plants(World world, Random rand, BlockPos field, BiomeGenBase biome) {
+        BiomeDecorator d = biome.theBiomeDecorator;
+        WorldGenerator bigGen = g(d, "bigMushroomGen");
+        WorldGenerator brownGen = g(d, "mushroomBrownGen");
+        WorldGenerator redGen = g(d, "mushroomRedGen");
+        WorldGenerator reedGen = g(d, "reedGen");
+        WorldGenerator cactusGen = g(d, "cactusGen");
+        WorldGenerator waterlilyGen = g(d, "waterlilyGen");
+        WorldGenFlowers yellowFlowerGen = (WorldGenFlowers) g(d, "yellowFlowerGen");
+
+        for (int i = 0; i < f(d, "bigMushroomsPerChunk"); i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            bigGen.generate(world, rand, world.getHeight(field.add(x, 0, z)));
+        }
+        for (int i = 0; i < f(d, "flowersPerChunk"); i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int h = world.getHeight(field.add(x, 0, z)).getY() + 32;
+            if (h > 0) {
+                int y = rand.nextInt(h);
+                BlockPos pos = field.add(x, y, z);
+                BlockFlower.EnumFlowerType type = biome.pickRandomFlower(rand, pos);
+                BlockFlower block = type.getBlockType().getBlock();
+                if (block.getMaterial() != Material.air) {
+                    yellowFlowerGen.setGeneratedBlock(block, type);
+                    yellowFlowerGen.generate(world, rand, pos);
+                }
+            }
+        }
+        for (int i = 0; i < f(d, "grassPerChunk"); i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int h = world.getHeight(field.add(x, 0, z)).getY() * 2;
+            if (h > 0) {
+                int y = rand.nextInt(h);
+                biome.getRandomWorldGenForGrass(rand).generate(world, rand, field.add(x, y, z));
+            }
+        }
+        for (int i = 0; i < f(d, "deadBushPerChunk"); i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int h = world.getHeight(field.add(x, 0, z)).getY() * 2;
+            if (h > 0) {
+                int y = rand.nextInt(h);
+                new WorldGenDeadBush().generate(world, rand, field.add(x, y, z));
+            }
+        }
+        for (int i = 0; i < f(d, "waterlilyPerChunk"); i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int h = world.getHeight(field.add(x, 0, z)).getY() * 2;
+            if (h > 0) {
+                int y = rand.nextInt(h);
+                BlockPos pos = field.add(x, y, z);
+                while (pos.getY() > 0) {
+                    BlockPos down = pos.down();
+                    if (!world.isAirBlock(down)) break;
+                    pos = down;
+                }
+                waterlilyGen.generate(world, rand, pos);
+            }
+        }
+        for (int i = 0; i < f(d, "mushroomsPerChunk"); i++) {
+            if (rand.nextInt(4) == 0) {
+                int x = rand.nextInt(16) + 8;
+                int z = rand.nextInt(16) + 8;
+                brownGen.generate(world, rand, world.getHeight(field.add(x, 0, z)));
+            }
+            if (rand.nextInt(8) == 0) {
+                int x = rand.nextInt(16) + 8;
+                int z = rand.nextInt(16) + 8;
+                int h = world.getHeight(field.add(x, 0, z)).getY() * 2;
+                if (h > 0) {
+                    int y = rand.nextInt(h);
+                    redGen.generate(world, rand, field.add(x, y, z));
+                }
+            }
+        }
+        if (rand.nextInt(4) == 0) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int h = world.getHeight(field.add(x, 0, z)).getY() * 2;
+            if (h > 0) {
+                int y = rand.nextInt(h);
+                brownGen.generate(world, rand, field.add(x, y, z));
+            }
+        }
+        if (rand.nextInt(8) == 0) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int h = world.getHeight(field.add(x, 0, z)).getY() * 2;
+            if (h > 0) {
+                int y = rand.nextInt(h);
+                redGen.generate(world, rand, field.add(x, y, z));
+            }
+        }
+        for (int i = 0; i < f(d, "reedsPerChunk"); i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int h = world.getHeight(field.add(x, 0, z)).getY() * 2;
+            if (h > 0) {
+                int y = rand.nextInt(h);
+                reedGen.generate(world, rand, field.add(x, y, z));
+            }
+        }
+        for (int i = 0; i < 10; i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int h = world.getHeight(field.add(x, 0, z)).getY() * 2;
+            if (h > 0) {
+                int y = rand.nextInt(h);
+                reedGen.generate(world, rand, field.add(x, y, z));
+            }
+        }
+        if (rand.nextInt(32) == 0) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int h = world.getHeight(field.add(x, 0, z)).getY() * 2;
+            if (h > 0) {
+                int y = rand.nextInt(h);
+                new WorldGenPumpkin().generate(world, rand, field.add(x, y, z));
+            }
+        }
+        for (int i = 0; i < f(d, "cactiPerChunk"); i++) {
+            int x = rand.nextInt(16) + 8;
+            int z = rand.nextInt(16) + 8;
+            int h = world.getHeight(field.add(x, 0, z)).getY() * 2;
+            if (h > 0) {
+                int y = rand.nextInt(h);
+                cactusGen.generate(world, rand, field.add(x, y, z));
             }
         }
     }

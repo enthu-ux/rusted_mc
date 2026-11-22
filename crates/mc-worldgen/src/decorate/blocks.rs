@@ -4,7 +4,7 @@
 //! (`oracle/java/src/MaterialTableOracle.java`) and the light opacity reuses
 //! `chunk::light_opacity` (`oracle/java/src/BlockTableOracle.java`).
 
-pub use crate::chunk::light_opacity;
+pub use crate::chunk::{is_full_block, light_opacity};
 
 // Block ids (`Block.getBlockById`).
 pub const AIR: i32 = 0;
@@ -31,15 +31,22 @@ pub const BROWN_MUSHROOM: i32 = 39;
 pub const RED_MUSHROOM: i32 = 40;
 pub const REDSTONE_ORE: i32 = 73;
 pub const DIAMOND_ORE: i32 = 56;
+pub const FARMLAND: i32 = 60;
+pub const CACTUS: i32 = 81;
 pub const CLAY: i32 = 82;
 pub const REEDS: i32 = 83;
 pub const PUMPKIN: i32 = 86;
-pub const CACTUS: i32 = 81;
-pub const WATERLILY: i32 = 111;
 pub const BROWN_MUSHROOM_BLOCK: i32 = 99;
 pub const RED_MUSHROOM_BLOCK: i32 = 100;
-pub const LOG2: i32 = 162;
+pub const MYCELIUM: i32 = 110;
+pub const WATERLILY: i32 = 111;
+pub const STAINED_HARDENED_CLAY: i32 = 159;
 pub const LEAVES2: i32 = 161;
+pub const LOG2: i32 = 162;
+pub const HARDENED_CLAY: i32 = 172;
+
+/// `BlockDirt.EnumType.PODZOL` metadata.
+pub const PODZOL_META: u16 = 2;
 
 /// `Material.air` (`Block.getMaterial() == Material.air` = block id 0).
 #[inline]
@@ -124,4 +131,10 @@ pub fn material_blocks_movement(id: i32) -> bool {
 #[inline]
 pub fn material_is_solid(id: i32) -> bool {
     id != 30 && material_blocks_movement(id)
+}
+
+/// `Material.isReplaceable()` (dumped; air, liquids, plants, fire, snow layer, vine, double plant).
+#[inline]
+pub fn material_is_replaceable(id: i32) -> bool {
+    matches!(id, 0 | 8 | 9 | 10 | 11 | 31 | 32 | 51 | 78 | 106 | 175)
 }

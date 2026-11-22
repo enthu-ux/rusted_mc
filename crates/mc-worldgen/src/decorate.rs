@@ -16,11 +16,12 @@
 
 use std::collections::BTreeMap;
 
-use mc_core::jmath::{cos, floor_double, sin};
+use mc_core::jmath::{clamp_double, cos, floor_double, sin};
 use mc_core::random::JavaRandom;
 
 pub mod blocks;
 
+use crate::noise::Perlin;
 use blocks::{
     material_blocks_movement, material_is_leaves, material_is_water, CLAY, DIAMOND_ORE, DIRT,
     GRASS, GRAVEL, SAND, STONE,
@@ -135,6 +136,7 @@ impl Default for DecorateSettings {
 pub struct DecorateOptions {
     pub ores: bool,
     pub surface: bool,
+    pub plants: bool,
 }
 
 impl DecorateOptions {
@@ -142,6 +144,7 @@ impl DecorateOptions {
         DecorateOptions {
             ores: false,
             surface: false,
+            plants: false,
         }
     }
 
@@ -149,6 +152,7 @@ impl DecorateOptions {
         DecorateOptions {
             ores: true,
             surface: true,
+            plants: true,
         }
     }
 }
@@ -165,6 +169,8 @@ struct ChunkState {
     blocks: Vec<u16>,
     /// `Chunk.heightMap`, index `z << 4 | x` (one past the highest light-blocking block).
     height: Vec<i32>,
+    /// `ExtendedBlockStorage`'s sky-light values, indexed `x << 12 | z << 8 | y` (0 above the top).
+    sky: Vec<u8>,
     /// `Chunk.precipitationHeightMap`, index `x + z * 16`; `-999` = stale.
     precip: Vec<i32>,
     /// Allocated `ExtendedBlockStorage` sections (bit `s` = section `s` exists).
@@ -208,11 +214,12 @@ impl DecorateWorld {
         let mut state = ChunkState {
             blocks,
             height: vec![0; 256],
+            sky: vec![0; 65536],
             precip: vec![-999; 256],
             sections,
             top_filled,
         };
-        state.recompute_height();
+        state.recompute_lighting();
         self.chunks.insert((chunk_x, chunk_z), state);
     }
 
@@ -246,6 +253,27 @@ impl DecorateWorld {
     #[inline]
     pub fn is_air(&self, x: i32, y: i32, z: i32) -> bool {
         self.get_id(x, y, z) == 0
+    }
+
+    /// `World.getLight` == `Chunk.getLightSubtracted(pos, 0)` == the sky light (block light is 0
+    /// during worldgen). A null section reads as 15 above the height map, else 0.
+    pub fn get_light(&self, x: i32, y: i32, z: i32) -> i32 {
+        if y < 0 {
+            return 0;
+        }
+        let y = if y >= 256 { 255 } else { y };
+        let Some(c) = self.chunks.get(&(x >> 4, z >> 4)) else {
+            return 0;
+        };
+        let section = (y >> 4) as usize;
+        if c.sections & (1 << section) == 0 {
+            return if y >= c.height[col_index(x, z)] {
+                15
+            } else {
+                0
+            };
+        }
+        c.sky[chunk_index(x, y, z)] as i32
     }
 
     /// `World.setBlockState` -> `Chunk.setBlockState`'s block write and height-map maintenance.
@@ -285,7 +313,7 @@ impl DecorateWorld {
         let new_opacity = blocks::light_opacity((value >> 4) as i32);
         let old_opacity = blocks::light_opacity((old >> 4) as i32);
         if created_section && y >= height {
-            chunk.recompute_height();
+            chunk.recompute_lighting();
         } else {
             if new_opacity > 0 {
                 if y >= height {
@@ -350,12 +378,14 @@ impl DecorateWorld {
 }
 
 impl ChunkState {
-    /// `Chunk.generateSkylightMap`'s height column scan (light values ignored).
-    fn recompute_height(&mut self) {
+    /// `Chunk.generateSkylightMap`: the height map and the column sky-light values (horizontal
+    /// propagation is `World.checkLight`, which the decoration oracle disables).
+    fn recompute_lighting(&mut self) {
         let top = self.top_filled;
         for x in 0..16i32 {
             for z in 0..16i32 {
-                self.precip[col_index(x, z)] = -999;
+                let col = col_index(x, z);
+                self.precip[col] = -999;
                 let mut h = 0;
                 for y in (1..=top + 16).rev() {
                     if blocks::light_opacity((self.blocks[chunk_index(x, y - 1, z)] >> 4) as i32)
@@ -365,12 +395,30 @@ impl ChunkState {
                         break;
                     }
                 }
-                self.height[col_index(x, z)] = h;
+                self.height[col] = h;
+
+                let mut light: i32 = 15;
+                let mut y = top + 15;
+                loop {
+                    let mut op =
+                        blocks::light_opacity((self.blocks[chunk_index(x, y, z)] >> 4) as i32);
+                    if op == 0 && light != 15 {
+                        op = 1;
+                    }
+                    light -= op;
+                    if light > 0 {
+                        self.sky[chunk_index(x, y, z)] = light as u8;
+                    }
+                    y -= 1;
+                    if y <= 0 || light <= 0 {
+                        break;
+                    }
+                }
             }
         }
     }
 
-    /// `Chunk.relightBlock` (light writes ignored; only the height map matters here).
+    /// `Chunk.relightBlock`: recompute one column's height map and sky-light values.
     fn relight(&mut self, x: i32, y: i32, z: i32) {
         let col = col_index(x, z);
         let old = self.height[col];
@@ -382,6 +430,28 @@ impl ChunkState {
         }
         if v != old {
             self.height[col] = v;
+            if v < old {
+                for y2 in v..old {
+                    self.sky[chunk_index(x, y2, z)] = 15;
+                }
+            } else {
+                for y2 in old..v {
+                    self.sky[chunk_index(x, y2, z)] = 0;
+                }
+            }
+            let mut light = 15i32;
+            while v > 0 && light > 0 {
+                v -= 1;
+                let mut op = blocks::light_opacity((self.blocks[chunk_index(x, v, z)] >> 4) as i32);
+                if op == 0 {
+                    op = 1;
+                }
+                light -= op;
+                if light < 0 {
+                    light = 0;
+                }
+                self.sky[chunk_index(x, v, z)] = light as u8;
+            }
         }
     }
 }
@@ -390,20 +460,39 @@ impl ChunkState {
 ///
 /// `biome_x`/`biome_z` are the chunk origin (`ChunkProviderGenerate.populate`'s `new BlockPos(x*16,
 /// 0, z*16)`), so features are placed in the `+8`-offset 16x16 window (spanning into the neighbour
-/// chunks), exactly as vanilla does.
+/// chunks), exactly as vanilla does. `biome_id` is the generation biome at that window's centre
+/// (`ChunkProviderGenerate.populate`'s `getBiomeGenForCoords(field.add(16, 0, 16))`), which selects
+/// the plant counts and the flower/grass hooks. `grass_noise` is `BiomeGenBase.GRASS_COLOR_NOISE`
+/// (`Perlin(Random(2345), 1)`), used by the plains/forest flower hooks. `big_mushroom` carries the
+/// shared `WorldGenBigMushroom`'s once-per-biome colour (`mushroomType`), keyed by biome id.
+#[allow(clippy::too_many_arguments)]
 pub fn decorate(
     world: &mut DecorateWorld,
     rand: &mut JavaRandom,
     biome_x: i32,
     biome_z: i32,
+    biome_id: i32,
     settings: &DecorateSettings,
     opts: DecorateOptions,
+    grass_noise: &mut Perlin,
+    big_mushroom: &mut BTreeMap<i32, bool>,
 ) {
     if opts.ores {
         generate_ores(world, rand, biome_x, biome_z, settings);
     }
     if opts.surface {
         surface(world, rand, biome_x, biome_z);
+    }
+    if opts.plants {
+        plants(
+            world,
+            rand,
+            biome_x,
+            biome_z,
+            biome_id,
+            grass_noise,
+            big_mushroom,
+        );
     }
 }
 
@@ -736,6 +825,793 @@ fn gen_clay(
     }
 }
 
+// ---- vegetation (big mushrooms, flowers, grass, dead bush, waterlily, mushrooms, reeds, pumpkin, cactus) ----
+
+/// The biome hook `BiomeGenBase.pickRandomFlower` (only the overrides differ from the default).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FlowerKind {
+    Default,
+    Plains,
+    ForestType1,
+    Swamp,
+}
+
+/// The biome hook `BiomeGenBase.getRandomWorldGenForGrass`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GrassKind {
+    Default,
+    Taiga,
+    Jungle,
+}
+
+/// One biome's `BiomeDecorator` plant counts + hooks (the constructor-time values; the per-biome
+/// `decorate` overrides that mutate them belong to the `full` layer).
+#[derive(Clone, Copy)]
+pub struct BiomePlants {
+    pub big_mushrooms: i32,
+    pub flowers: i32,
+    pub grass: i32,
+    pub dead_bush: i32,
+    pub mushrooms: i32,
+    pub reeds: i32,
+    pub cacti: i32,
+    pub waterlily: i32,
+    pub flower_kind: FlowerKind,
+    pub grass_kind: GrassKind,
+}
+
+/// `BiomeDecorator`'s plant counts per biome id, dumped from the live game
+/// (`oracle/java/src/BiomeDecorTableOracle.java`); the hooks are keyed by the biome's class (the
+/// mutated biomes are `BiomeGenMutated` and use the base hooks).
+pub fn biome_plants(biome_id: i32) -> BiomePlants {
+    // (big_mushrooms, flowers, grass, dead_bush, mushrooms, reeds, cacti, waterlily).
+    let (big, fl, gr, db, mu, re, ca, wl): (i32, i32, i32, i32, i32, i32, i32, i32) = match biome_id
+    {
+        1 | 129 => (0, 4, 10, 0, 0, 0, 0, 0), // plains / sunflower plains
+        2 | 17 => (0, 2, 1, 2, 0, 50, 10, 0), // desert / desert hills
+        4 | 18 | 27 | 28 | 29 => (0, 2, 2, 0, 0, 0, 0, 0), // forests
+        5 | 19 | 30 | 31 => (0, 2, 1, 0, 1, 0, 0, 0), // taiga family
+        6 => (0, 1, 5, 1, 8, 10, 0, 4),       // swamp
+        14 | 15 => (1, -100, -100, 0, 1, 0, 0, 0), // mushroom island
+        21..=23 => (0, 4, 25, 0, 0, 0, 0, 0), // jungle
+        32 | 33 | 160 | 161 => (0, 2, 7, 1, 3, 0, 0, 0), // mega taiga
+        35 | 36 => (0, 4, 20, 0, 0, 0, 0, 0), // savanna
+        37 | 38 | 39 | 165 | 166 | 167 => (0, 0, 1, 20, 0, 3, 5, 0), // mesa
+        132 => (0, 100, 1, 0, 0, 0, 0, 0),    // flower forest
+        163 | 164 => (0, 2, 5, 0, 0, 0, 0, 0), // savanna M
+        _ => (0, 2, 1, 0, 0, 0, 0, 0),        // everything else
+    };
+    let flower_kind = match biome_id {
+        1 | 129 => FlowerKind::Plains,
+        132 => FlowerKind::ForestType1,
+        6 => FlowerKind::Swamp,
+        _ => FlowerKind::Default,
+    };
+    let grass_kind = match biome_id {
+        5 | 19 | 30 | 31 | 32 | 33 | 160 | 161 => GrassKind::Taiga,
+        21..=23 => GrassKind::Jungle,
+        _ => GrassKind::Default,
+    };
+    BiomePlants {
+        big_mushrooms: big,
+        flowers: fl,
+        grass: gr,
+        dead_bush: db,
+        mushrooms: mu,
+        reeds: re,
+        cacti: ca,
+        waterlily: wl,
+        flower_kind,
+        grass_kind,
+    }
+}
+
+/// `BlockFlower.EnumFlowerType`, in declaration order (the array `pickRandomFlower` indexes).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Flower {
+    Dandelion,
+    Poppy,
+    BlueOrchid,
+    Allium,
+    Houstonia,
+    RedTulip,
+    OrangeTulip,
+    WhiteTulip,
+    PinkTulip,
+    OxeyeDaisy,
+}
+
+const FLOWER_TYPES: [Flower; 10] = [
+    Flower::Dandelion,
+    Flower::Poppy,
+    Flower::BlueOrchid,
+    Flower::Allium,
+    Flower::Houstonia,
+    Flower::RedTulip,
+    Flower::OrangeTulip,
+    Flower::WhiteTulip,
+    Flower::PinkTulip,
+    Flower::OxeyeDaisy,
+];
+
+impl Flower {
+    fn meta(self) -> u16 {
+        match self {
+            Flower::Dandelion | Flower::Poppy => 0,
+            Flower::BlueOrchid => 1,
+            Flower::Allium => 2,
+            Flower::Houstonia => 3,
+            Flower::RedTulip => 4,
+            Flower::OrangeTulip => 5,
+            Flower::WhiteTulip => 6,
+            Flower::PinkTulip => 7,
+            Flower::OxeyeDaisy => 8,
+        }
+    }
+
+    /// The `BlockFlower` state (`yellow_flower` for the dandelion, else `red_flower`).
+    fn state(self) -> u16 {
+        if self == Flower::Dandelion {
+            (blocks::YELLOW_FLOWER as u16) << 4
+        } else {
+            ((blocks::RED_FLOWER as u16) << 4) | self.meta()
+        }
+    }
+}
+
+/// `BiomeGenBase.pickRandomFlower` (dispatching on the biome's override).
+fn pick_random_flower(
+    kind: FlowerKind,
+    rand: &mut JavaRandom,
+    grass_noise: &mut Perlin,
+    x: i32,
+    z: i32,
+) -> Flower {
+    match kind {
+        FlowerKind::Default => {
+            if rand.next_int_bound(3) > 0 {
+                Flower::Dandelion
+            } else {
+                Flower::Poppy
+            }
+        }
+        FlowerKind::Swamp => Flower::BlueOrchid,
+        FlowerKind::Plains => {
+            let v = grass_noise.sample_2d(x as f64 / 200.0, z as f64 / 200.0);
+            if v < -0.8 {
+                match rand.next_int_bound(4) {
+                    0 => Flower::OrangeTulip,
+                    1 => Flower::RedTulip,
+                    2 => Flower::PinkTulip,
+                    _ => Flower::WhiteTulip,
+                }
+            } else if rand.next_int_bound(3) > 0 {
+                match rand.next_int_bound(3) {
+                    0 => Flower::Poppy,
+                    1 => Flower::Houstonia,
+                    _ => Flower::OxeyeDaisy,
+                }
+            } else {
+                Flower::Dandelion
+            }
+        }
+        FlowerKind::ForestType1 => {
+            let v = clamp_double(
+                (1.0 + grass_noise.sample_2d(x as f64 / 48.0, z as f64 / 48.0)) / 2.0,
+                0.0,
+                0.9999,
+            );
+            let t = FLOWER_TYPES[(v * 10.0) as usize];
+            if t == Flower::BlueOrchid {
+                Flower::Poppy
+            } else {
+                t
+            }
+        }
+    }
+}
+
+/// `BiomeGenBase.getRandomWorldGenForGrass` -> the `BlockTallGrass` metadata (GRASS = 1, FERN = 2).
+fn grass_meta(kind: GrassKind, rand: &mut JavaRandom) -> u16 {
+    match kind {
+        GrassKind::Default => 1,
+        GrassKind::Taiga => {
+            if rand.next_int_bound(5) > 0 {
+                2
+            } else {
+                1
+            }
+        }
+        GrassKind::Jungle => {
+            if rand.next_int_bound(4) == 0 {
+                2
+            } else {
+                1
+            }
+        }
+    }
+}
+
+/// `BlockBush.canPlaceBlockOn` (grass / dirt / farmland).
+#[inline]
+fn bush_soil(below_id: i32) -> bool {
+    below_id == blocks::GRASS || below_id == blocks::DIRT || below_id == blocks::FARMLAND
+}
+
+/// `WorldGenFlowers.generate`.
+fn gen_flowers(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    ox: i32,
+    oy: i32,
+    oz: i32,
+    state: u16,
+) {
+    for _ in 0..64 {
+        let x = ox + rand.next_int_bound(8) - rand.next_int_bound(8);
+        let y = oy + rand.next_int_bound(4) - rand.next_int_bound(4);
+        let z = oz + rand.next_int_bound(8) - rand.next_int_bound(8);
+        if world.is_air(x, y, z) && bush_soil(world.get_id(x, y - 1, z)) {
+            world.set(x, y, z, state);
+        }
+    }
+}
+
+/// `WorldGenTallGrass.generate`.
+fn gen_tall_grass(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    x: i32,
+    y: i32,
+    z: i32,
+    meta: u16,
+) {
+    let mut y = y;
+    while (world.is_air(x, y, z) || blocks::material_is_leaves(world.get_id(x, y, z))) && y > 0 {
+        y -= 1;
+    }
+
+    for _ in 0..128 {
+        let px = x + rand.next_int_bound(8) - rand.next_int_bound(8);
+        let py = y + rand.next_int_bound(4) - rand.next_int_bound(4);
+        let pz = z + rand.next_int_bound(8) - rand.next_int_bound(8);
+        if world.is_air(px, py, pz) && bush_soil(world.get_id(px, py - 1, pz)) {
+            world.set(px, py, pz, ((blocks::TALLGRASS as u16) << 4) | meta);
+        }
+    }
+}
+
+/// `WorldGenDeadBush.generate`.
+fn gen_dead_bush(world: &mut DecorateWorld, rand: &mut JavaRandom, x: i32, y: i32, z: i32) {
+    let mut y = y;
+    while (world.is_air(x, y, z) || blocks::material_is_leaves(world.get_id(x, y, z))) && y > 0 {
+        y -= 1;
+    }
+
+    for _ in 0..4 {
+        let px = x + rand.next_int_bound(8) - rand.next_int_bound(8);
+        let py = y + rand.next_int_bound(4) - rand.next_int_bound(4);
+        let pz = z + rand.next_int_bound(8) - rand.next_int_bound(8);
+        if world.is_air(px, py, pz) {
+            let below = world.get_id(px, py - 1, pz);
+            if below == blocks::SAND
+                || below == blocks::HARDENED_CLAY
+                || below == blocks::STAINED_HARDENED_CLAY
+                || below == blocks::DIRT
+            {
+                world.set(px, py, pz, (blocks::DEADBUSH as u16) << 4);
+            }
+        }
+    }
+}
+
+/// `BlockReed.canPlaceBlockAt` (grass/dirt/sand or reed below, and a water neighbour beside it).
+fn reed_can_stay(world: &DecorateWorld, x: i32, y: i32, z: i32) -> bool {
+    let below = world.get_id(x, y - 1, z);
+    if below == blocks::REEDS {
+        return true;
+    }
+    if below != blocks::GRASS && below != blocks::DIRT && below != blocks::SAND {
+        return false;
+    }
+    let by = y - 1;
+    material_is_water(world.get_id(x - 1, by, z))
+        || material_is_water(world.get_id(x + 1, by, z))
+        || material_is_water(world.get_id(x, by, z - 1))
+        || material_is_water(world.get_id(x, by, z + 1))
+}
+
+/// `WorldGenReed.generate`.
+fn gen_reed(world: &mut DecorateWorld, rand: &mut JavaRandom, ox: i32, oy: i32, oz: i32) {
+    for _ in 0..20 {
+        let x = ox + rand.next_int_bound(4) - rand.next_int_bound(4);
+        let z = oz + rand.next_int_bound(4) - rand.next_int_bound(4);
+        if world.is_air(x, oy, z) {
+            let by = oy - 1;
+            let water = material_is_water(world.get_id(x - 1, by, z))
+                || material_is_water(world.get_id(x + 1, by, z))
+                || material_is_water(world.get_id(x, by, z - 1))
+                || material_is_water(world.get_id(x, by, z + 1));
+            if water {
+                let inner = rand.next_int_bound(3) + 1;
+                let height = 2 + rand.next_int_bound(inner);
+                for i in 0..height {
+                    if reed_can_stay(world, x, oy, z) {
+                        world.set(x, oy + i, z, (blocks::REEDS as u16) << 4);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `BlockCactus.canBlockStay` (no solid horizontal neighbour; sand/cactus below).
+fn cactus_can_stay(world: &DecorateWorld, x: i32, y: i32, z: i32) -> bool {
+    if blocks::material_is_solid(world.get_id(x - 1, y, z))
+        || blocks::material_is_solid(world.get_id(x + 1, y, z))
+        || blocks::material_is_solid(world.get_id(x, y, z - 1))
+        || blocks::material_is_solid(world.get_id(x, y, z + 1))
+    {
+        return false;
+    }
+    let below = world.get_id(x, y - 1, z);
+    below == blocks::CACTUS || below == blocks::SAND
+}
+
+/// `WorldGenCactus.generate`.
+fn gen_cactus(world: &mut DecorateWorld, rand: &mut JavaRandom, ox: i32, oy: i32, oz: i32) {
+    for _ in 0..10 {
+        let x = ox + rand.next_int_bound(8) - rand.next_int_bound(8);
+        let y = oy + rand.next_int_bound(4) - rand.next_int_bound(4);
+        let z = oz + rand.next_int_bound(8) - rand.next_int_bound(8);
+        if world.is_air(x, y, z) {
+            let inner = rand.next_int_bound(3) + 1;
+            let height = 1 + rand.next_int_bound(inner);
+            for i in 0..height {
+                if cactus_can_stay(world, x, y, z) {
+                    world.set(x, y + i, z, (blocks::CACTUS as u16) << 4);
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGenWaterlily.generate` (`BlockLilyPad.canPlaceBlockAt`: air above still water).
+fn gen_waterlily(world: &mut DecorateWorld, rand: &mut JavaRandom, ox: i32, oy: i32, oz: i32) {
+    for _ in 0..10 {
+        let x = ox + rand.next_int_bound(8) - rand.next_int_bound(8);
+        let y = oy + rand.next_int_bound(4) - rand.next_int_bound(4);
+        let z = oz + rand.next_int_bound(8) - rand.next_int_bound(8);
+        if world.is_air(x, y, z) && world.get_id(x, y - 1, z) == blocks::WATER {
+            world.set(x, y, z, (blocks::WATERLILY as u16) << 4);
+        }
+    }
+}
+
+/// `WorldGenPumpkin.generate` (on air above grass; FACING = `Plane.HORIZONTAL.random`).
+fn gen_pumpkin(world: &mut DecorateWorld, rand: &mut JavaRandom, ox: i32, oy: i32, oz: i32) {
+    for _ in 0..64 {
+        let x = ox + rand.next_int_bound(8) - rand.next_int_bound(8);
+        let y = oy + rand.next_int_bound(4) - rand.next_int_bound(4);
+        let z = oz + rand.next_int_bound(8) - rand.next_int_bound(8);
+        if world.is_air(x, y, z) && world.get_id(x, y - 1, z) == blocks::GRASS {
+            // `canPlaceBlockAt`: pos replaceable (air) and a solid top surface below (grass).
+            if blocks::is_full_block(world.get_id(x, y - 1, z)) {
+                // `Plane.HORIZONTAL` = {NORTH, EAST, SOUTH, WEST}; meta = horizontal index.
+                let meta = [2u16, 3, 0, 1][rand.next_int_bound(4) as usize];
+                world.set(x, y, z, ((blocks::PUMPKIN as u16) << 4) | meta);
+            }
+        }
+    }
+}
+
+/// `BlockMushroom.canBlockStay` (mycelium/podzol, or a full block below with light < 13).
+fn mushroom_can_stay(world: &DecorateWorld, x: i32, y: i32, z: i32) -> bool {
+    if !(0..256).contains(&y) {
+        return false;
+    }
+    let below = world.get(x, y - 1, z);
+    let below_id = (below >> 4) as i32;
+    if below_id == blocks::MYCELIUM {
+        return true;
+    }
+    if below_id == blocks::DIRT && (below & 15) == blocks::PODZOL_META {
+        return true;
+    }
+    world.get_light(x, y, z) < 13 && blocks::is_full_block(below_id)
+}
+
+/// `GeneratorBushFeature.generate` (brown/red mushroom).
+fn gen_bush(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    ox: i32,
+    oy: i32,
+    oz: i32,
+    state: u16,
+) {
+    for _ in 0..64 {
+        let x = ox + rand.next_int_bound(8) - rand.next_int_bound(8);
+        let y = oy + rand.next_int_bound(4) - rand.next_int_bound(4);
+        let z = oz + rand.next_int_bound(8) - rand.next_int_bound(8);
+        if world.is_air(x, y, z) && mushroom_can_stay(world, x, y, z) {
+            world.set(x, y, z, state);
+        }
+    }
+}
+
+/// `BlockHugeMushroom.EnumType`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HugeMushroom {
+    NorthWest,
+    North,
+    NorthEast,
+    West,
+    Center,
+    East,
+    SouthWest,
+    South,
+    SouthEast,
+    Stem,
+    AllInside,
+    AllOutside,
+    AllStem,
+}
+
+impl HugeMushroom {
+    fn meta(self) -> u16 {
+        match self {
+            HugeMushroom::NorthWest => 1,
+            HugeMushroom::North => 2,
+            HugeMushroom::NorthEast => 3,
+            HugeMushroom::West => 4,
+            HugeMushroom::Center => 5,
+            HugeMushroom::East => 6,
+            HugeMushroom::SouthWest => 7,
+            HugeMushroom::South => 8,
+            HugeMushroom::SouthEast => 9,
+            HugeMushroom::Stem => 10,
+            HugeMushroom::AllInside => 0,
+            HugeMushroom::AllOutside => 14,
+            HugeMushroom::AllStem => 15,
+        }
+    }
+
+    /// `EnumType.byMetadata` (unknown metadata falls back to `ALL_INSIDE`).
+    fn by_metadata(m: i32) -> HugeMushroom {
+        match m {
+            1 => HugeMushroom::NorthWest,
+            2 => HugeMushroom::North,
+            3 => HugeMushroom::NorthEast,
+            4 => HugeMushroom::West,
+            5 => HugeMushroom::Center,
+            6 => HugeMushroom::East,
+            7 => HugeMushroom::SouthWest,
+            8 => HugeMushroom::South,
+            9 => HugeMushroom::SouthEast,
+            10 => HugeMushroom::Stem,
+            14 => HugeMushroom::AllOutside,
+            15 => HugeMushroom::AllStem,
+            _ => HugeMushroom::AllInside,
+        }
+    }
+}
+
+fn huge_mushroom_state(is_brown: bool, variant: HugeMushroom) -> u16 {
+    let id = if is_brown {
+        blocks::BROWN_MUSHROOM_BLOCK
+    } else {
+        blocks::RED_MUSHROOM_BLOCK
+    };
+    ((id as u16) << 4) | variant.meta()
+}
+
+/// `WorldGenBigMushroom.generate` (the no-arg constructor; `is_brown` is the shared `mushroomType`).
+fn gen_big_mushroom(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    x: i32,
+    y: i32,
+    z: i32,
+    is_brown: bool,
+) {
+    let size = rand.next_int_bound(3) + 4;
+    if !(y >= 1 && y + size + 1 < 256) {
+        return;
+    }
+
+    let mut ok = true;
+    'scan: for by in y..=(y + 1 + size) {
+        let r = if by <= y + 3 { 0 } else { 3 };
+        for bx in (x - r)..=(x + r) {
+            for bz in (z - r)..=(z + r) {
+                if (0..256).contains(&by) {
+                    let id = world.get_id(bx, by, bz);
+                    if id != 0 && !blocks::material_is_leaves(id) {
+                        ok = false;
+                        break 'scan;
+                    }
+                } else {
+                    ok = false;
+                    break 'scan;
+                }
+            }
+        }
+    }
+    if !ok {
+        return;
+    }
+
+    let below = world.get_id(x, y - 1, z);
+    if below != blocks::DIRT && below != blocks::GRASS && below != blocks::MYCELIUM {
+        return;
+    }
+
+    let cap = if is_brown { y + size } else { y + size - 3 };
+    for cy in cap..=(y + size) {
+        let mut r = 1;
+        if cy < y + size {
+            r += 1;
+        }
+        if is_brown {
+            r = 3;
+        }
+        let x1 = x - r;
+        let x2 = x + r;
+        let z1 = z - r;
+        let z2 = z + r;
+
+        for px in x1..=x2 {
+            for pz in z1..=z2 {
+                let mut meta = 5;
+                if px == x1 {
+                    meta -= 1;
+                } else if px == x2 {
+                    meta += 1;
+                }
+                if pz == z1 {
+                    meta -= 3;
+                } else if pz == z2 {
+                    meta += 3;
+                }
+                let mut variant = HugeMushroom::by_metadata(meta);
+                if is_brown || cy < y + size {
+                    if (px == x1 || px == x2) && (pz == z1 || pz == z2) {
+                        continue;
+                    }
+                    if px == x - (r - 1) && pz == z1 {
+                        variant = HugeMushroom::NorthWest;
+                    }
+                    if px == x1 && pz == z - (r - 1) {
+                        variant = HugeMushroom::NorthWest;
+                    }
+                    if px == x + (r - 1) && pz == z1 {
+                        variant = HugeMushroom::NorthEast;
+                    }
+                    if px == x2 && pz == z - (r - 1) {
+                        variant = HugeMushroom::NorthEast;
+                    }
+                    if px == x - (r - 1) && pz == z2 {
+                        variant = HugeMushroom::SouthWest;
+                    }
+                    if px == x1 && pz == z + (r - 1) {
+                        variant = HugeMushroom::SouthWest;
+                    }
+                    if px == x + (r - 1) && pz == z2 {
+                        variant = HugeMushroom::SouthEast;
+                    }
+                    if px == x2 && pz == z + (r - 1) {
+                        variant = HugeMushroom::SouthEast;
+                    }
+                }
+                if variant == HugeMushroom::Center && cy < y + size {
+                    variant = HugeMushroom::AllInside;
+                }
+                if variant != HugeMushroom::AllInside {
+                    let id = world.get_id(px, cy, pz);
+                    if !blocks::is_full_block(id) {
+                        world.set(px, cy, pz, huge_mushroom_state(is_brown, variant));
+                    }
+                }
+            }
+        }
+    }
+
+    for i in 0..size {
+        let id = world.get_id(x, y + i, z);
+        if !blocks::is_full_block(id) {
+            world.set(
+                x,
+                y + i,
+                z,
+                huge_mushroom_state(is_brown, HugeMushroom::Stem),
+            );
+        }
+    }
+}
+
+/// `BiomeDecorator.genDecorations`' vegetation section (items after the trees).
+#[allow(clippy::too_many_arguments)]
+fn plants(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    bx: i32,
+    bz: i32,
+    biome_id: i32,
+    grass_noise: &mut Perlin,
+    big_mushroom: &mut BTreeMap<i32, bool>,
+) {
+    let cfg = biome_plants(biome_id);
+
+    for _ in 0..cfg.big_mushrooms {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let y = world.height(bx + x, bz + z);
+        let is_brown = match big_mushroom.get(&biome_id) {
+            Some(&b) => b,
+            None => {
+                let b = rand.next_boolean();
+                big_mushroom.insert(biome_id, b);
+                b
+            }
+        };
+        gen_big_mushroom(world, rand, bx + x, y, bz + z, is_brown);
+    }
+
+    for _ in 0..cfg.flowers {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) + 32;
+        if h > 0 {
+            let y = rand.next_int_bound(h);
+            let flower = pick_random_flower(cfg.flower_kind, rand, grass_noise, bx + x, bz + z);
+            gen_flowers(world, rand, bx + x, y, bz + z, flower.state());
+        }
+    }
+
+    for _ in 0..cfg.grass {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) * 2;
+        if h > 0 {
+            let y = rand.next_int_bound(h);
+            let meta = grass_meta(cfg.grass_kind, rand);
+            gen_tall_grass(world, rand, bx + x, y, bz + z, meta);
+        }
+    }
+
+    for _ in 0..cfg.dead_bush {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) * 2;
+        if h > 0 {
+            let y = rand.next_int_bound(h);
+            gen_dead_bush(world, rand, bx + x, y, bz + z);
+        }
+    }
+
+    for _ in 0..cfg.waterlily {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) * 2;
+        if h > 0 {
+            let mut y = rand.next_int_bound(h);
+            while y > 0 {
+                let down = y - 1;
+                if !world.is_air(bx + x, down, bz + z) {
+                    break;
+                }
+                y = down;
+            }
+            gen_waterlily(world, rand, bx + x, y, bz + z);
+        }
+    }
+
+    for _ in 0..cfg.mushrooms {
+        if rand.next_int_bound(4) == 0 {
+            let x = rand.next_int_bound(16) + 8;
+            let z = rand.next_int_bound(16) + 8;
+            let y = world.height(bx + x, bz + z);
+            gen_bush(
+                world,
+                rand,
+                bx + x,
+                y,
+                bz + z,
+                (blocks::BROWN_MUSHROOM as u16) << 4,
+            );
+        }
+        if rand.next_int_bound(8) == 0 {
+            let x = rand.next_int_bound(16) + 8;
+            let z = rand.next_int_bound(16) + 8;
+            let h = world.height(bx + x, bz + z) * 2;
+            if h > 0 {
+                let y = rand.next_int_bound(h);
+                gen_bush(
+                    world,
+                    rand,
+                    bx + x,
+                    y,
+                    bz + z,
+                    (blocks::RED_MUSHROOM as u16) << 4,
+                );
+            }
+        }
+    }
+
+    if rand.next_int_bound(4) == 0 {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) * 2;
+        if h > 0 {
+            let y = rand.next_int_bound(h);
+            gen_bush(
+                world,
+                rand,
+                bx + x,
+                y,
+                bz + z,
+                (blocks::BROWN_MUSHROOM as u16) << 4,
+            );
+        }
+    }
+    if rand.next_int_bound(8) == 0 {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) * 2;
+        if h > 0 {
+            let y = rand.next_int_bound(h);
+            gen_bush(
+                world,
+                rand,
+                bx + x,
+                y,
+                bz + z,
+                (blocks::RED_MUSHROOM as u16) << 4,
+            );
+        }
+    }
+
+    for _ in 0..cfg.reeds {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) * 2;
+        if h > 0 {
+            let y = rand.next_int_bound(h);
+            gen_reed(world, rand, bx + x, y, bz + z);
+        }
+    }
+    for _ in 0..10 {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) * 2;
+        if h > 0 {
+            let y = rand.next_int_bound(h);
+            gen_reed(world, rand, bx + x, y, bz + z);
+        }
+    }
+
+    if rand.next_int_bound(32) == 0 {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) * 2;
+        if h > 0 {
+            let y = rand.next_int_bound(h);
+            gen_pumpkin(world, rand, bx + x, y, bz + z);
+        }
+    }
+
+    for _ in 0..cfg.cacti {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) * 2;
+        if h > 0 {
+            let y = rand.next_int_bound(h);
+            gen_cactus(world, rand, bx + x, y, bz + z);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -806,5 +1682,54 @@ mod tests {
         assert_eq!(world.top_solid_or_liquid(3, 7), 64);
         world.set(3, 70, 7, (blocks::DIRT as u16) << 4); // opaque
         assert_eq!(world.top_solid_or_liquid(3, 7), 71);
+    }
+
+    /// The per-biome plant counts come from the live game (`BiomeDecorTableOracle`).
+    #[test]
+    fn biome_plant_table_matches_the_game() {
+        let swamp = biome_plants(6);
+        assert_eq!(swamp.waterlily, 4);
+        assert_eq!(swamp.reeds, 10);
+        assert_eq!(swamp.mushrooms, 8);
+        assert_eq!(swamp.flower_kind, FlowerKind::Swamp);
+
+        let mushroom_island = biome_plants(14);
+        assert_eq!(mushroom_island.big_mushrooms, 1);
+        assert_eq!(mushroom_island.flowers, -100);
+
+        let mesa = biome_plants(37);
+        assert_eq!(mesa.cacti, 5);
+        assert_eq!(mesa.dead_bush, 20);
+
+        assert_eq!(biome_plants(32).grass_kind, GrassKind::Taiga);
+        assert_eq!(biome_plants(21).grass_kind, GrassKind::Jungle);
+    }
+
+    /// `BlockFlower.EnumFlowerType` -> the block state (`yellow_flower` only for the dandelion).
+    #[test]
+    fn flower_states_use_the_right_block_and_meta() {
+        assert_eq!(
+            Flower::Dandelion.state(),
+            (blocks::YELLOW_FLOWER as u16) << 4
+        );
+        assert_eq!(Flower::Poppy.state(), (blocks::RED_FLOWER as u16) << 4);
+        assert_eq!(
+            Flower::BlueOrchid.state(),
+            ((blocks::RED_FLOWER as u16) << 4) | 1
+        );
+        assert_eq!(
+            Flower::OxeyeDaisy.state(),
+            ((blocks::RED_FLOWER as u16) << 4) | 8
+        );
+    }
+
+    /// `BlockMushroom.canBlockStay`: dark + full block below, or mycelium (which bypasses light).
+    #[test]
+    fn mushroom_light_and_soil_rules() {
+        let mut world = stone_world(63);
+        assert!(mushroom_can_stay(&world, 3, 20, 7)); // underground, dark, stone below
+        assert!(!mushroom_can_stay(&world, 3, 64, 7)); // open sky (light 15), stone below
+        world.set(3, 63, 7, (blocks::MYCELIUM as u16) << 4);
+        assert!(mushroom_can_stay(&world, 3, 64, 7)); // mycelium bypasses the light rule
     }
 }

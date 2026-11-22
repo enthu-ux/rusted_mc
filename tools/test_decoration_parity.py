@@ -30,8 +30,17 @@ ORACLE_CLASSES = WORK / "oracle-classes"
 
 SEEDS = ["0", "12345", "-7"]
 CHUNKS = [(0, 0), (100, -50), (-37, 210), (-3, 0), (-48, -48), (6, 5)]
-MODES = ["ores", "surface", "ore_surface"]
+MODES = ["ores", "surface", "plants", "ore_surface"]
 ORE_IDS = {14, 15, 16, 21, 56, 73}
+PLANT_IDS = {31, 32, 37, 38, 39, 40, 81, 83, 86, 99, 100, 111}
+# Each vegetation generator the corpus must actually exercise (else the fixture proves nothing).
+PLANT_SIGNATURE = {
+    "tall grass": {31},
+    "flower": {37, 38},
+    "small mushroom (skylight)": {39, 40},
+    "cactus": {81},
+    "dead bush": {32},
+}
 
 
 def find_cargo() -> str:
@@ -97,14 +106,25 @@ def first_mismatch(vanilla: str, rust_out: str) -> str | None:
 
 
 def ore_count(text: str) -> int:
-    n = 0
+    return block_count(text, ORE_IDS)
+
+
+def plant_count(text: str) -> int:
+    return block_count(text, PLANT_IDS)
+
+
+def block_count(text: str, ids: set[int]) -> int:
+    return len(_block_ids(text) & ids)
+
+
+def _block_ids(text: str) -> set[int]:
+    seen: set[int] = set()
     for line in text.splitlines():
         if line.startswith("seed ") or len(line.split()) < 3:
             continue
         for v in line.split()[2:]:
-            if (int(v) >> 4) in ORE_IDS:
-                n += 1
-    return n
+            seen.add(int(v) >> 4)
+    return seen
 
 
 def main() -> int:
@@ -121,13 +141,20 @@ def main() -> int:
         return 2
 
     total_lines = 0
+    plant_seen: set[int] = set()
     for mode in MODES:
         for seed in SEEDS:
             vanilla = oracle(seed, mode)
             rust_out = rust(seed, mode)
 
+            if "plant" in mode:
+                plant_seen |= _block_ids(vanilla)
+
             if "ore" in mode and ore_count(vanilla) == 0:
                 print(f"FIXTURE ERROR: mode {mode} seed {seed}: no ore blocks placed")
+                return 1
+            if "plant" in mode and plant_count(vanilla) == 0:
+                print(f"FIXTURE ERROR: mode {mode} seed {seed}: no plant blocks placed")
                 return 1
 
             (WORK / f"vanilla-{mode}-{seed}.txt").write_text(vanilla, encoding="utf-8")
@@ -139,6 +166,11 @@ def main() -> int:
                 print("  " + problem)
                 return 1
             total_lines += len(vanilla.splitlines())
+
+    for name, ids in PLANT_SIGNATURE.items():
+        if not (plant_seen & ids):
+            print(f"FIXTURE ERROR: the corpus never places a {name}; add a chunk that exercises it")
+            return 1
 
     print(f"OK: {total_lines} lines match ({len(MODES)} modes x {len(SEEDS)} seeds x {len(CHUNKS)} chunks)")
     return 0

@@ -16,6 +16,7 @@ fn options(mode: &str) -> DecorateOptions {
     DecorateOptions {
         ores: mode.contains("ore"),
         surface: mode.contains("surface"),
+        plants: mode.contains("plant"),
     }
 }
 

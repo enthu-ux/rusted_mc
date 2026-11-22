@@ -193,8 +193,9 @@ nether fortresses, villages and strongholds. Structure *blocks* are written in `
 mineshaft half is
 now ported (`mineshaft_placement_parity`) together with the RNG its chests consume (`loot_parity`:
 `WeightedRandomChestContent` + `EnchantmentHelper.buildEnchantmentList`); all six structure layouts
-are now ported, so the remaining work for Gate C is decoration (`decoration_parity` gates its first
-layers; trees, vegetation, springs and the per-biome overrides are pending). (Vanilla's `onBlockAdded`
+are now ported, so the remaining work for Gate C is decoration (`decoration_parity` gates its ore,
+surface and vegetation layers; trees, springs and the per-biome overrides are pending). (Vanilla's
+`onBlockAdded`
 block-update consequences - rail reshaping, torch support - are outside the placement port; see
 `handoff.md`.)
 
