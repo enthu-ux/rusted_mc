@@ -670,3 +670,9 @@ P0's remaining items need a running binary.
   `SHRT` is the only exception). 4 new unit tests (**100 total**). A throwaway `StrongholdScan.java`
   found the ring coords. `verify.ps1`: **12/12**. **`1d` structure layouts are complete**; next
   session: decoration (`BiomeDecorator` + feature generators).
+- **2026-11-22 - session 18 (handoff + git).** Rewrote the at-a-glance/status for the completed `1d`
+  structure layouts, refreshed `README.md`/`plan.md`/`docs/performance-baselines.md`, and confirmed the
+  baseline: **12/12** harnesses, **100** tests, fmt clean, `structures_parity` **10,533 lines / 96
+  starts**. Committed and pushed (`8b2d704`). **Next session: decoration (`BiomeDecorator` + feature
+  generators), then structure block placement for the non-mineshaft structures** (both are needed
+  before `worldgen_parity` can take the Gate-C name).
