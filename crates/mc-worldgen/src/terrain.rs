@@ -14,6 +14,7 @@ use crate::chunk::{self, GeneratedChunk};
 use crate::layer::BiomeLayers;
 use crate::noise::{Octaves, Perlin};
 use crate::structure::mineshaft::Mineshaft;
+use crate::structure::placement::{self, ChunkWorld};
 use mc_core::random::JavaRandom;
 use std::f64::consts::PI;
 
@@ -542,6 +543,39 @@ impl TerrainGen {
             height_map,
             structures,
         }
+    }
+
+    /// `ChunkProviderGenerate.populate`'s mineshaft passes for one chunk: the target chunk's blocks
+    /// after the four covering populate passes write their pieces.
+    ///
+    /// Vanilla's `generateStructure` box is offset by 8 ([`placement::structure_box`]), so it spans two
+    /// chunks per axis; the target chunk has terrain supplied for the surrounding 3x3 (which also
+    /// registers every start the passes can meet) and is written by the four chunks whose boxes cover
+    /// it. The boxes are disjoint, but piece state carries across passes, so they run in a fixed order
+    /// ((cx-1,cz-1), (cx-1,cz), (cx,cz-1), (cx,cz)); vanilla's is chunk-load order.
+    pub fn populate_mineshaft_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Vec<u16> {
+        let mut world = ChunkWorld::new();
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let chunk = self.generate_chunk(chunk_x + dx, chunk_z + dz, GenOptions::vanilla());
+                world.insert_chunk(chunk_x + dx, chunk_z + dz, chunk.blocks);
+            }
+        }
+
+        for a in [chunk_x - 1, chunk_x] {
+            for b in [chunk_z - 1, chunk_z] {
+                let mut rand = placement::populate_rand(self.seed, a, b);
+                let bbox = placement::structure_box(a, b);
+                let x0 = (a << 4) + 8;
+                let z0 = (b << 4) + 8;
+                self.mineshafts
+                    .for_each_start_meeting_mut(x0, z0, x0 + 15, z0 + 15, |start| {
+                        placement::generate_structure(start, &mut world, &mut rand, &bbox);
+                    });
+            }
+        }
+
+        world.chunk_blocks(chunk_x, chunk_z).to_vec()
     }
 
     /// `provideChunk` steps 1-4, returning the primer and the generation biome array.

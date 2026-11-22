@@ -1,6 +1,8 @@
-// Dumps `Block.getLightOpacity()` and whether the material is air, per registered block id.
-// The chunk height map scans columns with `Chunk.getBlockLightOpacity` (opacity != 0 = "solid"),
-// so the port needs this table. Printed once and transcribed into `mc-worldgen`.
+// Dumps `Block.getLightOpacity()`, whether the material is air, whether it is liquid, and
+// `Block.isFullBlock()`, per registered block id. The chunk height map scans columns with
+// `Chunk.getBlockLightOpacity` (opacity != 0 = "solid"), and structure placement needs the liquid
+// material (`isLiquidInStructureBoundingBox`) and `isFullBlock` (the mineshaft rail loop).
+// Printed once and transcribed into `mc-worldgen`.
 //
 // Usage: BlockTableOracle            (all ids 0..255)
 
@@ -22,6 +24,10 @@ public class BlockTableOracle {
             sb.append(id).append(' ')
                     .append(b.getLightOpacity()).append(' ')
                     .append(b.getMaterial() == Material.air ? "air" : "solid")
+                    .append(' ')
+                    .append(b.getMaterial().isLiquid() ? "liquid" : "dry")
+                    .append(' ')
+                    .append(b.isFullBlock() ? "full" : "notfull")
                     .append(' ')
                     .append(b.getUnlocalizedName())
                     .append('\n');

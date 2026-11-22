@@ -9,13 +9,14 @@
 //!    `StructureStart` - which lays out the whole piece tree with that neighbour's stream. Nothing is
 //!    written to the chunk here; the blocks come in phase 2.
 //! 2. **Placement** (`populate` -> `MapGenStructure.generateStructure` -> `StructureStart.generateStructure`):
-//!    walks the registered starts whose bounding box meets the chunk and writes their pieces into the
-//!    world (see `handoff.md`; not ported yet).
+//!    walks the registered starts whose (offset) bounding box meets the chunk and writes their pieces
+//!    into the world (see `placement.rs`).
 //!
 //! `MapGenStructure.structureMap` is a `HashMap` in vanilla, so its iteration order must never leak
 //! into anything observable - the dump sorts by chunk coordinate.
 
 pub mod mineshaft;
+pub mod placement;
 
 use mc_core::random::JavaRandom;
 

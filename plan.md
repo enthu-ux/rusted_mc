@@ -185,8 +185,12 @@ stays reserved for the final chunk. The pieces that exist are pinned separately:
 (`tools/test_worldgen_parity.py`) covers blocks + metadata + biome + heightmap for the
 **pre-decoration** `provideChunk` output on these seeds/chunks (plus cave/ravine/mesa/ocean
 fixtures), and `structures_parity` covers the structure *layout* registered during `provideChunk`
-(starts, pieces, bounding boxes). Structure/decoration *blocks* are written in `populate`, which is
-not ported yet - when it lands, the two merge into the Gate-C harness.
+(starts, pieces, bounding boxes). Structure *blocks* are written in `populate`: the mineshaft half is
+now ported (`mineshaft_placement_parity`) together with the RNG its chests consume (`loot_parity`:
+`WeightedRandomChestContent` + `EnchantmentHelper.buildEnchantmentList`); the other structures' layouts
+and decoration are still unported, so the Gate-C harness waits for them. (Vanilla's `onBlockAdded`
+block-update consequences - rail reshaping, torch support - are outside the placement port; see
+`handoff.md`.)
 
 ## 12. Risks & Mitigations
 
@@ -330,6 +334,8 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | Caves/ravines | `crates/mc-worldgen/src/cave.rs` + `tools/test_caves_parity.py` (+ `CaveOracle.java`) | ✅ `caves_parity` green: 46,260 lines match (`MapGenBase` + `MapGenCaves` + `MapGenRavine`, caves/ravines/both/base) |
 | Chunk artefacts | `crates/mc-worldgen/src/chunk.rs` + `tools/test_worldgen_parity.py` (+ `WorldgenOracle.java`) | ✅ `worldgen_parity` green: 7,770 lines match (blocks + biome array + height map; pre-decoration chunk) |
 | Mineshafts (layout) | `crates/mc-worldgen/src/structure/` (mod + `mineshaft.rs`) + `tools/test_structures_parity.py` (+ `StructuresOracle.java`) | ✅ `structures_parity` green: 2,702 lines match (starts + pieces + boxes; block placement pending) |
+| Loot + enchantment RNG | `crates/mc-worldgen/src/loot.rs` + `tools/test_loot_parity.py` (+ `LootOracle.java`) | ✅ `loot_parity` green: 695 lines match (registry + `buildEnchantmentList` + `generateChestContents`; unblocks chest placement) |
+| Mineshaft block placement | `crates/mc-worldgen/src/structure/placement.rs` + `tools/test_mineshaft_placement_parity.py` (+ `MineshaftPlacementOracle.java`) | ✅ `mineshaft_placement_parity` green: 3,598 lines match (3 seeds x 14 chunks, 426 structure blocks; curated corpus - see `handoff.md`) |
 | Java HashMap order | `crates/mc-core/src/jhash.rs` + `tools/test_jhash_parity.py` (+ `HashOrderOracle.java`) | ✅ `jhash_parity` green: 16 insertion orders / 301 keys match `keySet()` order (unblocks chest-enchantment RNG) |
 | Block table | `oracle/java/src/BlockTableOracle.java` → `chunk::light_opacity` | ✅ dumped from the live game (opacity per block id + material-air set) |
 | Math | `crates/mc-core/src/jmath.rs` + `tools/test_math_parity.py` (+ `MathOracle.java`) | ✅ `math_parity` green: 492 lines match (`MathHelper` sin/cos table + floor/clamp helpers) |

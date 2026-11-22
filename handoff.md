@@ -18,12 +18,11 @@ commit/push.
 ## At a glance
 
 - **Milestone:** M1 `worldgen_seed` (in progress). Parity-gated so far: base terrain, caves/ravines,
-  the canonical chunk (biome array + height map), mineshaft **layout**, and `java.util.HashMap` order.
-  **Structure/decoration blocks are not ported yet** - blocked on the loot/enchantment RNG
-  (`Next steps` #1b/#1c below).
-- **Next increment:** `1b` loot + enchantment RNG (`mc-core::jhash` is already in place), then `1c`
-  mineshaft placement + the `populate` oracle, then `1d` the other structures' layouts.
-- **Baseline:** `scripts/verify.ps1` -> **10/10** harnesses, **60** unit tests, fmt clean.
+  the canonical chunk (biome array + height map), mineshaft **layout**, `java.util.HashMap` order, the
+  loot + enchantment RNG, and mineshaft **block placement** (the `populate` half; a curated corpus).
+- **Next increment:** `1d` the other structures' layouts (village / stronghold / scattered feature /
+  ocean monument / nether bridge), then decoration (`BiomeDecorator` + feature generators).
+- **Baseline:** `scripts/verify.ps1` -> **12/12** harnesses, **80** unit tests, fmt clean.
 
 ---
 
@@ -55,10 +54,11 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass (60 unit tests); `py tools/parity.py` reports
-`10/10 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
+Expected today: `cargo test` and `fmt` pass (80 unit tests); `py tools/parity.py` reports
+`12/12 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
 `biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 492; `caves_parity` 46,260;
-`worldgen_parity` 7,770; `structures_parity` 2,702; `jhash_parity` 16 orders / 301 keys).
+`worldgen_parity` 7,770; `structures_parity` 2,702; `jhash_parity` 16 orders / 301 keys;
+`loot_parity` 25 enchantments / 28 cases = 695 lines; `mineshaft_placement_parity` 14 chunks = 3,598 lines).
 
 `tools/perf_baseline.py` is **manual** (not part of `verify`): it builds release binaries, runs the
 Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `MC_SPANS=1`,
@@ -86,7 +86,7 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 - **Inputs:** done. Official 1.8.9 jars (hash-checked), clean vanilla decompile (0 Forge refs),
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
-- **Workspace:** 11 crates; `cargo test` + `fmt` green (10/10 harnesses, 60 tests).
+- **Workspace:** 11 crates; `cargo test` + `fmt` green (12/12 harnesses, 80 tests).
 - **Performance (P0 substrate done):** `docs/performance-contract.md` + `docs/performance-baselines.md`;
   `mc-perf` (zero-dep: opt-in spans, `Stats`, `work::par_chunks_mut`, `alloc::CountingAllocator`) +
   `tools/perf_baseline.py`; spans on the worldgen hot path. First baseline: Rust base terrain
@@ -104,7 +104,13 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   `mc-worldgen::chunk` (canonical chunk artefacts: biome array + height map, `light_opacity`
   table); `mc-worldgen::mapgen` (`MapGenBase` driver, shared by the carve passes and structures);
   `mc-worldgen::structure` (`StructureStart`/`Piece`/`BoundingBox` model + `mineshaft.rs`:
-  `MapGenMineshaft` registration and the whole piece layout); `mc-perf`.
+  `MapGenMineshaft` registration and the whole piece layout); `mc-worldgen::loot`
+  (`WeightedRandom`, `WeightedRandomChestContent.generateChestContents` + the 13-entry mineshaft list +
+  `func_177629_a`, the `Enchantment` registry table + `EnchantmentHelper.mapEnchantmentData`/
+  `buildEnchantmentList`/`addRandomEnchantment` on the book path); `mc-worldgen::structure::placement`
+  (the `StructureComponent` helpers + the four `StructureMineshaftPieces.addComponentParts` bodies +
+  `MapGenStructure.generateStructure`/`StructureStart.generateStructure`), driven by
+  `TerrainGen::populate_mineshaft_chunk`; `mc-perf`.
 - **Docs/policy:** `plan.md` (§1-17), `README.md`, `AGENTS.md`, `docs/PHILOSOPHY.md`,
   `docs/ARCHITECTURE.md`, `docs/deviations.md`, `deviations.toml`, `docs/horizon-reuse.md`,
   `docs/horizon-performance-reuse.md`, `docs/performance-contract.md`, `docs/performance-baselines.md`,
@@ -116,8 +122,9 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 - Harnesses green: `random_parity`, `noise_parity`, `noise_batch_parity`, `biome_layer_parity`,
   `terrain_parity` (full base terrain), `math_parity`, `caves_parity` (caves + ravines),
   `worldgen_parity` (canonical chunk: blocks + biome array + height map),
-  `structures_parity` (mineshaft layout), `jhash_parity` (`java.util.HashMap` iteration order).
-  Unit tests: 38 `mc-worldgen`, 12 `mc-core`, 10 `mc-perf`.
+  `structures_parity` (mineshaft layout), `jhash_parity` (`java.util.HashMap` iteration order),
+  `loot_parity` (loot + enchantment RNG), `mineshaft_placement_parity` (mineshaft block placement).
+  Unit tests: 57 `mc-worldgen`, 13 `mc-core`, 10 `mc-perf`.
 - Notable vanilla quirks encoded: `GenLayerHills.field_151628_d` unseeded top Zooms; Mesa cache
   `Random(0)` + `func_150619_a` orange-loop `+2` step; `ChunkPrimer` x/z transposition in
   `generateBiomeTerrain`; caves and ravines reach biomes through the **biome cache** (index
@@ -130,53 +137,64 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 ## Next steps (prioritized, each with a pass condition)
 
-**Recommended next: the loot/enchantment RNG subsystem, then structure *placement*; or structure
-layouts (b2) in the meantime.** P0's remaining items need a running binary.
+**Recommended next: `1d` - the other structures' layouts (the placement infrastructure is in place);
+then decoration.** P0's remaining items need a running binary.
 
 1. **`worldgen_seed` — M1 (in progress).** `mc-core::jmath` + `math_parity` done; base terrain done;
    caves + ravines done (`cave.rs` + `caves_parity`); canonical chunk artefacts done (`chunk.rs` +
-   `worldgen_parity`); mineshaft **layout** done (`structure/` + `structures_parity`). Remaining:
-   (b1) mineshaft **block placement** — **blocked**, see below; (b2) the other structures' layouts
-   (village / stronghold / scattered feature / ocean monument / nether bridge) - the harness already
-   generalises (dump vanilla's structure NBT); (c) decoration (`BiomeDecorator` + feature generators -
-   biggest); (d) structure/decoration blocks, once the placement infrastructure exists. Then the full
-   chunk (blocks + metadata + biome + heightmap) for the Gate-C seeds/chunks is reachable and
-   `worldgen_parity` can take the Gate-C name.
+   `worldgen_parity`); mineshaft **layout** done (`structure/` + `structures_parity`); the **loot +
+   enchantment RNG** done (`loot.rs` + `loot_parity`); mineshaft **block placement** done
+   (`structure/placement.rs` + `mineshaft_placement_parity`). Remaining: (b2) the other structures'
+   layouts (village / stronghold / scattered feature / ocean monument / nether bridge) - the harness
+   already generalises (dump vanilla's structure NBT, then place); (c) decoration (`BiomeDecorator` +
+   feature generators - biggest); (d) structure/decoration blocks, once the placement infrastructure
+   exists. Then the full chunk (blocks + metadata + biome + heightmap) for the Gate-C seeds/chunks is
+   reachable and `worldgen_parity` can take the Gate-C name.
    *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
    and chunks.
 
-   **Why placement is blocked (verified in source):** `addComponentParts` cannot be ported without the
-   **loot RNG**. Each corridor rolls `rand.nextInt(100) == 0` twice per section; on a hit it calls
-   `Items.enchanted_book.getRandom(rand)` as an argument, i.e. `EnchantmentHelper.buildEnchantmentList`
-   -> `ItemBook.getItemEnchantability() == 1` -> `mapEnchantmentData` (a `HashMap<Integer,
-   EnchantmentData>` whose *iteration order* feeds `WeightedRandom.getRandomItem`) plus the
-   enchantment registry. A mineshaft makes roughly 5-10 such rolls, so this is not a rare branch, and
-   those draws shift the rest of the chunk's block placement.
+   **Why placement needed the loot RNG (verified in source):** `addComponentParts` rolls the chest
+   list with `Items.enchanted_book.getRandom(rand)` (via `func_177629_a`); that runs
+   `EnchantmentHelper.buildEnchantmentList` -> `ItemBook.getItemEnchantability() == 1` ->
+   `mapEnchantmentData` (a `HashMap<Integer, EnchantmentData>` whose *iteration order* feeds
+   `WeightedRandom.getRandomItem`) plus the enchantment registry. A mineshaft makes roughly 5-10 such
+   rolls, so this is not a rare branch, and those draws shift the rest of the chunk's block placement.
+   **Ported in 1b** - see below.
 
-   **Unblocking sequence (in progress):**
+   **Unblocking sequence (1a/1b done):**
    1a. ✅ `mc-core::jhash` - `java.util.HashMap` iteration order (spread hash, doubling resize,
    `treeifyBin`'s early resize, `Integer`/`Long` hash codes), parity-gated by `jhash_parity`. This is
-   the piece the enchantment map needs.
-   1b. **next:** loot + enchantment RNG - `WeightedRandom.getRandomItem`, `WeightedRandomChestContent`
-   (+ the 13-entry mineshaft weight list and `func_177629_a`), `Enchantment` table (id/weight/
-   min-max level/applicability - dump it from the game like `BlockTableOracle`), then
-   `EnchantmentHelper.buildEnchantmentList` + `mapEnchantmentData`. Harness: an oracle that runs the
-   real `generateChestContents` over fixed seeds and prints the *random stream afterwards*
-   (e.g. the next 32 `nextInt` values), so the draw sequence is compared, not the items.
-   1c. mineshaft placement (`StructureComponent` helpers + the four `addComponentParts` bodies),
-   the `populate` oracle (design below) and the block harness.
-   1d. the other structures' layouts (village / stronghold / scattered / monument / nether bridge);
-   then decoration (`BiomeDecorator` + feature generators - biggest). Then the full chunk (blocks +
-   metadata + biome + heightmap) for the Gate-C seeds/chunks is reachable and `worldgen_parity` can
-   take the Gate-C name.
+   the piece the enchantment map needs; `JavaHashMap` also gained order-preserving `retain` for
+   `buildEnchantmentList`'s iterator `remove()`.
+   1b. ✅ loot + enchantment RNG - `mc-worldgen::loot`: `WeightedRandom.getRandomItem`,
+   `WeightedRandomChestContent.generateChestContents` (+ the 13-entry mineshaft weight list and
+   `func_177629_a`), the `Enchantment` registry table (id/weight/max level/type + the subclasses'
+   enchantability/`canApplyTogether`), `EnchantmentHelper.mapEnchantmentData`/
+   `buildEnchantmentList`/`addRandomEnchantment` (book path). Harness `loot_parity`
+   (`LootOracle.java` + `examples/loot_probe.rs`): the registry table + exclusivity matrix against the
+   live `Enchantment` registry, random book rolls (the stored enchantments pin the *HashMap order*,
+   since the weighted pick sums in `values()` order) and the real `generateChestContents` (the list,
+   every slot write, and the next 32 draws) - so the **draw sequence** is compared, not just the items.
+   Note: the stream alone cannot see map order (only the number of draws); the printed enchantment ids
+   are what pin it.
+   1c. ✅ mineshaft block placement - `mc-worldgen::structure::placement`: the `StructureComponent`
+   helpers (`isLiquidInStructureBoundingBox`, offsets, `fillWithBlocks`/`func_175805_a`/
+   `randomlyPlaceBlock`/`randomlyRareFillWithBlocks`), the four `addComponentParts` bodies, and the
+   corridor's `generateChestContents` override (rails + the loot draws). `MapGenStructure.generateStructure`'s
+   box is offset by 8 (bytecode-verified), so a chunk is written by the four populate passes whose boxes
+   cover it; `TerrainGen::populate_mineshaft_chunk` supplies the 3x3 terrain, registers starts, and runs
+   the four passes (carrying `spawnerPlaced`/removal state). Harness `mineshaft_placement_parity`
+   (`MineshaftPlacementOracle.java` + `examples/mineshaft_probe.rs`) compares the placed chunk's blocks
+   on a curated corpus. **Scope:** vanilla's `Chunk.setBlockState` calls `Block.onBlockAdded`, so it
+   reshapes rails (`BlockRailBase.updateState`) and drops unsupported torches (`BlockTorch.checkForDrop`)
+   as it places them - block-update semantics, not placement; the corpus excludes fixtures that trigger
+   them (see "Open threads"), and multi-start/order-dependent boxes are excluded (HashMap order).
+   1d. **next:** the other structures' layouts (village / stronghold / scattered / monument / nether
+   bridge); then decoration (`BiomeDecorator` + feature generators - biggest). Then the full chunk
+   (blocks + metadata + biome + heightmap) for the Gate-C seeds/chunks is reachable and
+   `worldgen_parity` can take the Gate-C name.
    *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
-   and chunks. Porting it means porting enchantments
-   (weights/levels per item) **and** Java `HashMap` iteration order for `Integer` keys - i.e. the
-   `plan.md` §7 "expect to reimplement Java HashMap order" item. Sequenced properly: (1) loot tables +
-   `WeightedRandomChestContent` (pure arrays, order-independent), (2) enchantment registry + a
-   `java-hashmap` iteration-order helper, (3) mineshaft placement, (4) the `populate` oracle (design
-   below) and the block harness, (5) decoration. Doing (3) before (1)+(2) would produce chunks that
-   match only where no chest rolled - which is almost none of them.
+   and chunks.
 2. **`light_parity`** - sky/block light arrays after edits match 1.8.9, with the engine **rewritten**
    for performance (plan §7/§13). Starts once `mc-world` chunks exist.
 3. **P0 remainder (when a binary exists):** install `mc-perf::alloc::CountingAllocator` (and
@@ -271,17 +289,41 @@ layouts (b2) in the meantime.** P0's remaining items need a running binary.
     chunks; our port keeps a deterministic (chunk-coordinate) order and does **not** try to
     replicate the history-dependent case. Actual treeification (8+ entries in a bin at capacity
     >= 64) is deliberately not modelled (`jhash.rs` documents it).
-- **Loot/enchantment dependency for placement:** `StructureMineshaftPieces.Corridor` rolls a chest
-  twice per section (≈5-10 per mineshaft) and the roll consumes enchantment RNG before anything else
-  (`Items.enchanted_book.getRandom` -> `buildEnchantmentList` -> `mapEnchantmentData`). Chest *contents*
-  also draw from `WeightedRandomChestContent` (array-ordered, portable) + `nextInt(27)` per slot.
-  Plan the subsystem before any `addComponentParts` port.
-- **Populate oracle design (ready to build):** the headless world needs a stub `IChunkProvider` that
-  stores chunks produced by a `ChunkProviderGenerate` (with `mapFeaturesEnabled = true` and only the
-  wanted feature enabled), because `world.setBlockState` -> `getChunkFromBlockCoords` ->
-  `provider.provideChunk`. Drive `ChunkProviderGenerate.populate(provider, x, z)` explicitly (as
-  `ChunkProviderServer` does), then read the chunk back. `isLiquidInStructureBoundingBox` and the
-  piece writers only read/write inside the populating chunk, so the result is order-independent.
+- **Loot/enchantment RNG (ported):** `mc-worldgen::loot`. `StructureMineshaftPieces.Corridor` rolls a
+  chest twice per section (≈5-10 per mineshaft) and the roll consumes enchantment RNG before anything
+  else (`Items.enchanted_book.getRandom` -> `buildEnchantmentList` -> `mapEnchantmentData`). Chest
+  *contents* also draw from `WeightedRandomChestContent` (array-ordered, portable) + `nextInt(27)` per
+  slot. Parity via `loot_parity`. Notable details: the
+  `EnchantmentHelper.buildEnchantmentList` map is filled in **id order** but read in **HashMap order**;
+  the enchantment table's `canApplyTogether` is **asymmetric** (loot bonus excludes silk touch, but
+  silk touch only excludes fortune); `mapEnchantmentData` keeps the *highest* matching level per id
+  (`put` overwrites); a stack larger than the item's max stack size fans out into that many single-item
+  writes (shifting the draw count). Item ids/max stack sizes are from `Item.registerItems()`. Only the
+  **book** path is ported (all enchantment types applicable); non-book applicability needs the item
+  registry.
+- **Mineshaft placement scope (1c):** the port writes the same blocks in the same order as vanilla's
+  four `populate` passes (`mineshaft_placement_parity`, 14 chunks). Two things are deliberately out of
+  scope, both documented:
+  - **`onBlockAdded`.** `Chunk.setBlockState` ends by calling `Block.onBlockAdded`, so vanilla reshapes
+    each placed rail (`BlockRailBase.updateState`, neighbour-dependent shapes 2..9) and drops an
+    unsupported torch (`BlockTorch.checkForDrop` -> `setBlockToAir`). Those are block-update semantics
+    (the block-update/tick subsystem, cf. `tick_parity`), not placement; the corpus excludes fixtures
+    that trigger them. Porting them (or the general block-update system) is the next step toward
+    comparing the final chunk instead of a curated corpus.
+  - **Multi-start / order-dependent boxes.** `MapGenStructure.structureMap` is a `HashMap`, so when
+    several starts meet one box the placement RNG is consumed in a history-dependent order; and the
+    four covering passes carry corridor state (`spawnerPlaced`, piece removal), so vanilla's result
+    depends on chunk-load order. The port uses a deterministic pass order and `structureMap` order, and
+    the corpus keeps only single-start-per-box, order-independent fixtures (checked by the oracle's
+    `MS_REVERSE`).
+- **Populate driver (1c):** `TerrainGen::populate_mineshaft_chunk(cx, cz)` generates the surrounding
+  3x3 (whose generation also registers every start the passes can meet), then runs the four covering
+  passes `MapGenStructure.generateStructure` would (`(cx-1,cz-1)`, `(cx-1,cz)`, `(cx,cz-1)`, `(cx,cz)`).
+  The oracle's headless world needs a stub `IChunkProvider` that stores chunks produced by a
+  `ChunkProviderGenerate` (only caves/ravines/mineshafts enabled, `mapFeaturesEnabled = true`), because
+  `world.setBlockState` -> `getChunkFromBlockCoords` -> `provider.provideChunk`; the 3x3 is
+  pre-provided so a write never generates a chunk mid-`generateStructure` (which would mutate
+  `structureMap`).
 
 ## Session log (append-only)
 
@@ -437,3 +479,40 @@ layouts (b2) in the meantime.** P0's remaining items need a running binary.
   `README.md` (it still listed six harnesses) and confirmed the baseline: **10/10** harnesses, 60
   tests, fmt clean. **Next session: `1b` loot + enchantment RNG, then `1c` mineshaft placement +
   the `populate` oracle.** Committed and pushed.
+- **2026-11-22 - session 12 (1b: loot + enchantment RNG).** Ported the subsystem the mineshaft blocks
+  were blocked on into `crates/mc-worldgen/src/loot.rs`: `WeightedRandom` (`weighted_index`/
+  `weighted_index_from`), `WeightedRandomChestContent.generateChestContents` + `func_177629_a`
+  (`with_extra`) + the 13-entry `MINESHAFT_CHEST_CONTENT` list, the `Enchantment` registry table
+  (`ENCHANTMENTS`, 25 entries: id/weight/max level/type/subclass) with the subclasses'
+  `min`/`max_enchantability` and `can_apply_together`, and the book path of
+  `EnchantmentHelper.mapEnchantmentData`/`buildEnchantmentList`/`addRandomEnchantment` (using
+  `mc_core::jhash::JavaHashMap`). Added order-preserving `JavaHashMap::retain` (+ a `jhash` unit test)
+  for `buildEnchantmentList`'s iterator `remove()`. New harness `loot_parity`
+  (`oracle/java/src/LootOracle.java` + `crates/mc-worldgen/examples/loot_probe.rs` +
+  `tools/test_loot_parity.py`): 3 modes (`table` = registry + per-level enchantability + the ordered
+  `canApplyTogether` matrix; `enchant` = random book rolls; `chest` = the real `generateChestContents`),
+  each printing the next 32 draws, **695 lines match** with fixture guards (25 enchantments / 300
+  exclusivity pairs; at least one non-empty enchant list and one chest write). 12 new unit tests + 1 in
+  `mc-core` (**73 total**). A negative self-test (weight 10 -> 9) failed as expected. The harness caught
+  a wrong unit-test assertion (silk touch excludes fortune *both* ways; only silk<->looting is
+  asymmetric) - the port itself was already right. Whole-suite verify: **11/11** harnesses. Next
+  session: `1c` mineshaft placement + the `populate` oracle, then `1d` the other structures.
+- **2026-11-22 - session 13 (1c: mineshaft block placement).** Added
+  `crates/mc-worldgen/src/structure/placement.rs`: the `StructureComponent` helpers
+  (`isLiquidInStructureBoundingBox`, the offset accessors, `fillWithBlocks`, `func_175805_a`,
+  `randomlyPlaceBlock`, `randomlyRareFillWithBlocks`), the four `StructureMineshaftPieces.addComponentParts`
+  bodies, and the corridor's `generateChestContents` override (rails + the `loot.rs` chest draws);
+  plus `MapGenStructure.generateStructure`/`StructureStart.generateStructure` (with vanilla's
+  piece-removal and carried `spawnerPlaced`). Key finding (bytecode-verified): the `generateStructure`
+  box is `(chunk << 4) + 8` (a `+8` offset spanning two chunks per axis), so a chunk is the union of the
+  four covering populate passes; `TerrainGen::populate_mineshaft_chunk` generates the 3x3 (registering
+  starts) and runs them in a fixed order. Added `chunk::{material_is_liquid, is_full_block}` (dumped
+  from `BlockTableOracle`), `Mineshaft::{starts_meeting, for_each_start_meeting_mut}`, and the oracle
+  `MineshaftPlacementOracle.java` + `examples/mineshaft_probe.rs` + `tools/test_mineshaft_placement_parity.py`
+  (**3,598 lines match**, 3 seeds x 14 chunks, 426 structure blocks, with order-independence and
+  single-start guards). 7 new unit tests (**80 total**). Diagnosis worth recording: the residual
+  differences on some fixtures are **not** placement bugs - `Chunk.setBlockState` calls
+  `Block.onBlockAdded`, so vanilla reshapes rails (`BlockRailBase.updateState`) and drops unsupported
+  torches (`BlockTorch.checkForDrop`) while placing; those are block-update semantics, so the corpus
+  excludes fixtures that trigger them (see "Open threads"). `verify.ps1`: **12/12** harnesses. Next
+  session: `1d` the other structures' layouts, then decoration.

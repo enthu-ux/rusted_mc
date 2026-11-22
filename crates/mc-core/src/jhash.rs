@@ -97,6 +97,26 @@ impl<K: PartialEq, V> JavaHashMap<K, V> {
         self.table.iter().flatten().map(|e| (&e.key, &e.value))
     }
 
+    /// Drops every entry for which `keep` is false, preserving the order of the rest.
+    ///
+    /// Models removing entries through a `keySet()`/`entrySet()` iterator (`it.remove()`), as
+    /// `EnchantmentHelper.buildEnchantmentList` does: removal unlinks a node from its bucket without
+    /// resizing or rehashing, so the remaining entries keep their bucket/position order.
+    pub fn retain<F: FnMut(&K, &V) -> bool>(&mut self, mut keep: F) {
+        let mut size = 0;
+        for bin in &mut self.table {
+            bin.retain(|entry| {
+                if keep(&entry.key, &entry.value) {
+                    size += 1;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+        self.size = size;
+    }
+
     /// `treeifyBin`: below `MIN_TREEIFY_CAPACITY` (64) Java doubles the table instead of turning the
     /// bin into a red-black tree; the resize rehashes the entry that just triggered it.
     ///
@@ -212,6 +232,24 @@ mod tests {
             order_int(&(0..20).collect::<Vec<_>>()),
             (0..20).collect::<Vec<_>>()
         );
+    }
+
+    /// Removing through the iterator keeps the surviving entries' bucket order: of the nine colliding
+    /// keys in order `0 32 64 96 128 16 48 80 112`, dropping the odd multiples of 16 leaves
+    /// `0 32 64 96 128`.
+    #[test]
+    fn retain_keeps_bucket_order() {
+        let keys: Vec<i32> = (0..9).map(|i| i * 16).collect();
+        let mut map: JavaHashMap<i32, ()> = JavaHashMap::new();
+        for &k in &keys {
+            map.insert(k, (), int_hash_code(k));
+        }
+        map.retain(|k, _| k % 32 == 0);
+        assert_eq!(
+            map.iter().map(|(k, _)| *k).collect::<Vec<_>>(),
+            vec![0, 32, 64, 96, 128]
+        );
+        assert_eq!(map.len(), 5);
     }
 
     /// `Long` chunk keys (`ChunkCoordIntPair.chunkXZ2Int`) - oracle order.

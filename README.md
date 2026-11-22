@@ -8,17 +8,18 @@ performance. See `plan.md` §16 for the parity policy and Deviation Registry, an
 ## Status
 
 - Inputs downloaded and verified: 1.8.9 jars, clean vanilla decompile, MCP stable_22, protocol data.
-- Workspace scaffolded (11 crates); `cargo test` and `cargo fmt --check` are green (60 tests).
-- Parity harnesses green (10): `random_parity`, `noise_parity`, `noise_batch_parity`,
+- Workspace scaffolded (11 crates); `cargo test` and `cargo fmt --check` are green (80 tests).
+- Parity harnesses green (12): `random_parity`, `noise_parity`, `noise_batch_parity`,
   `biome_layer_parity`, `terrain_parity` (full overworld base terrain), `math_parity`,
   `caves_parity` (caves + ravines), `worldgen_parity` (canonical chunk: blocks + biome + height map),
   `structures_parity` (mineshaft layout: starts + pieces + boxes), `jhash_parity`
-  (`java.util.HashMap` iteration order).
+  (`java.util.HashMap` iteration order), `loot_parity` (loot + enchantment RNG),
+  `mineshaft_placement_parity` (mineshaft block placement).
 - Performance (P0 substrate): `mc-perf` + `docs/performance-contract.md` / `docs/performance-baselines.md`
   (base terrain Rust 1.35 ms/chunk vs Java 1.8.9 3.63 ms/chunk, caveated; per-stage spans recorded).
-- Next: structure/decoration **blocks** - loot + enchantment RNG, then mineshaft placement +
-  the `populate` oracle, then the other structures. See `handoff.md` for the exact sequencing and
-  the known blockers.
+- Next: the other structures' layouts (village / stronghold / scattered / monument / nether bridge),
+  then decoration (`BiomeDecorator` + feature generators). See `handoff.md` for the exact sequencing
+  and the known scope limits (vanilla's `onBlockAdded` block updates are outside the placement port).
 
 ## Layout
 

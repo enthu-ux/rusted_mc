@@ -69,6 +69,34 @@ impl Mineshaft {
             .collect()
     }
 
+    /// Every registered start whose box meets the X/Z region `[x0, x1] x [z0, z1]` (the 4-arg
+    /// `intersectsWith` `MapGenStructure.generateStructure` uses - it ignores Y).
+    pub fn starts_meeting(&self, x0: i32, z0: i32, x1: i32, z1: i32) -> Vec<StructureStart> {
+        self.starts
+            .values()
+            .filter(|s| s.bbox.intersects_with_xz(x0, z0, x1, z1))
+            .cloned()
+            .collect()
+    }
+
+    /// Runs `visit` on each registered start whose box meets the X/Z region, in chunk-coordinate
+    /// order, allowing the caller to advance it in place (vanilla's `structureMap.values()` order is
+    /// a `HashMap`'s; the port is deterministic and single-start-per-box is exact).
+    pub fn for_each_start_meeting_mut<F: FnMut(&mut StructureStart)>(
+        &mut self,
+        x0: i32,
+        z0: i32,
+        x1: i32,
+        z1: i32,
+        mut visit: F,
+    ) {
+        for start in self.starts.values_mut() {
+            if start.bbox.intersects_with_xz(x0, z0, x1, z1) {
+                visit(start);
+            }
+        }
+    }
+
     /// `MapGenStructure.structureMap` size (for tests/diagnostics).
     pub fn start_count(&self) -> usize {
         self.starts.len()
