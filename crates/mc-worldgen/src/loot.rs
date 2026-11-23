@@ -120,6 +120,21 @@ pub mod chest {
         content(ItemStackSpec::new(417, 0, 1), 1, 1, 1),   // iron_horse_armor
     ];
 
+    /// `ComponentScatteredFeaturePieces.DesertPyramid.itemsToGenerateInTemple` (10 entries, total
+    /// weight 71). Item ids/max stack sizes from `Item.registerItems()`.
+    pub const TEMPLE_CHEST_CONTENT: [ChestContent; 10] = [
+        content(ItemStackSpec::new(264, 0, 64), 1, 3, 3), // diamond
+        content(ItemStackSpec::new(265, 0, 64), 1, 5, 10), // iron_ingot
+        content(ItemStackSpec::new(266, 0, 64), 2, 7, 15), // gold_ingot
+        content(ItemStackSpec::new(388, 0, 64), 1, 3, 2), // emerald
+        content(ItemStackSpec::new(352, 0, 64), 4, 6, 20), // bone
+        content(ItemStackSpec::new(367, 0, 64), 3, 7, 16), // rotten_flesh
+        content(ItemStackSpec::new(329, 0, 1), 1, 1, 3),  // saddle
+        content(ItemStackSpec::new(417, 0, 1), 1, 1, 1),  // iron_horse_armor
+        content(ItemStackSpec::new(418, 0, 1), 1, 1, 1),  // golden_horse_armor
+        content(ItemStackSpec::new(419, 0, 1), 1, 1, 1),  // diamond_horse_armor
+    ];
+
     /// `WeightedRandomChestContent.func_177629_a`: a new list of `base` followed by `extra`.
     pub fn with_extra(base: &[ChestContent], extra: ChestContent) -> Vec<ChestContent> {
         let mut list = base.to_vec();

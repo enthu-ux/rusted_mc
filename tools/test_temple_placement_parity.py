@@ -38,13 +38,16 @@ SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "temple"
 ORACLE_CLASSES = WORK / "oracle-classes"
 
-# Swamp-hut origins (their own chunk): seed 0 (3,47), seed 12345 (-26,49).
+# Swamp-hut origins (their own chunk): seed 0 (3,47), seed 12345 (-26,49); desert pyramid: seed -7 (4,2).
 CORPUS = {
     "0": [(3, 47)],
     "12345": [(-26, 49)],
+    "-7": [(4, 2)],
 }
-# `planks`, `log`, `oak_fence`, `flower_pot`, `crafting_table`, `cauldron`, `spruce_stairs`.
-STRUCTURE_BLOCKS = {5, 17, 85, 140, 58, 118, 134}
+# Swamp-hut blocks (`planks`, `log`, `oak_fence`, `flower_pot`, `crafting_table`, `cauldron`,
+# `spruce_stairs`) + desert-pyramid signatures (`sandstone_stairs`, stained hardened clay,
+# `stone_slab`, `stone_pressure_plate`, `tnt`, `chest`).
+STRUCTURE_BLOCKS = {5, 17, 85, 140, 58, 118, 134, 128, 159, 44, 70, 46, 54}
 
 
 def find_cargo() -> str:

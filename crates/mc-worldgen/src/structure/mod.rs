@@ -46,6 +46,46 @@ impl Facing {
             Facing::East => 3,
         }
     }
+
+    /// `EnumFacing.getIndex()` (DOWN=0, UP=1, NORTH=2, SOUTH=3, WEST=4, EAST=5).
+    pub fn index(self) -> i32 {
+        match self {
+            Facing::North => 2,
+            Facing::South => 3,
+            Facing::West => 4,
+            Facing::East => 5,
+        }
+    }
+
+    /// `EnumFacing.getOpposite()`.
+    pub fn opposite(self) -> Facing {
+        match self {
+            Facing::North => Facing::South,
+            Facing::South => Facing::North,
+            Facing::West => Facing::East,
+            Facing::East => Facing::West,
+        }
+    }
+
+    /// `EnumFacing.rotateY()` (clockwise seen from above).
+    pub fn rotate_y(self) -> Facing {
+        match self {
+            Facing::North => Facing::East,
+            Facing::East => Facing::South,
+            Facing::South => Facing::West,
+            Facing::West => Facing::North,
+        }
+    }
+
+    /// `getFrontOffsetX`/`getFrontOffsetZ` of a horizontal facing.
+    pub fn offset(self) -> (i32, i32) {
+        match self {
+            Facing::North => (0, -1),
+            Facing::South => (0, 1),
+            Facing::West => (-1, 0),
+            Facing::East => (1, 0),
+        }
+    }
 }
 
 /// `StructureBoundingBox` (inclusive on both ends).

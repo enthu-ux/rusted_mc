@@ -22,10 +22,11 @@ commit/push.
   scattered-feature temple/hut, ocean monument, nether fortress, village, stronghold),
   `java.util.HashMap` order, the loot + enchantment RNG, mineshaft **block placement** (the
   `populate` half; a curated corpus), **all of decoration** (layers 1-4 + the per-biome `decorate`
-  overrides), and the **swamp hut's block placement** (the scattered-feature `populate` half).
-- **Next increment:** the remaining structure **block placement**: the desert/jungle pyramids, then
-  the ocean monument, nether fortress, village and stronghold; then the full Gate-C chunk.
-- **Baseline:** `scripts/verify.ps1` -> **14/14** harnesses, **119** unit tests, fmt clean.
+  overrides), and the **swamp hut + desert pyramid block placement** (the scattered-feature
+  `populate` half).
+- **Next increment:** the jungle pyramid's block placement, then the ocean monument, nether
+  fortress, village and stronghold; then the full Gate-C chunk.
+- **Baseline:** `scripts/verify.ps1` -> **14/14** harnesses, **121** unit tests, fmt clean.
 
 ---
 
@@ -57,13 +58,13 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass (119 unit tests); `py tools/parity.py` reports
+Expected today: `cargo test` and `fmt` pass (121 unit tests); `py tools/parity.py` reports
 `14/14 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
 `biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 492; `caves_parity` 46,260;
 `worldgen_parity` 7,770; `structures_parity` 10,533 lines / 96 starts (mineshaft + scattered feature +
 monument + nether fortress + village + stronghold); `jhash_parity` 16 orders / 301 keys;
 `loot_parity` 25 enchantments / 28 cases = 695 lines; `mineshaft_placement_parity` 14 chunks = 3,598 lines;
-`temple_placement_parity` 2 chunks = 514 lines, 282 blocks (swamp hut);
+`temple_placement_parity` 3 chunks = 771 lines, 340 blocks (swamp hut + desert pyramid);
 `decoration_parity` 7 modes x 3 seeds = 32,896 lines, all decoration incl. the per-biome overrides).
 
 `tools/perf_baseline.py` is **manual** (not part of `verify`): it builds release binaries, runs the
@@ -122,8 +123,9 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   `func_177629_a`, the `Enchantment` registry table + `EnchantmentHelper.mapEnchantmentData`/
   `buildEnchantmentList`/`addRandomEnchantment` on the book path); `mc-worldgen::structure::placement`
   (the `StructureComponent` helpers + the four `StructureMineshaftPieces.addComponentParts` bodies +
-  `MapGenStructure.generateStructure`/`StructureStart.generateStructure`, and the **swamp hut's**
-  `addComponentParts` incl. `func_74935_a`'s average-height offset),
+  `MapGenStructure.generateStructure`/`StructureStart.generateStructure`, and the **swamp hut +
+  desert pyramid** `addComponentParts` bodies incl. `func_74935_a`'s average-height offset, the
+  temple chest loot + `BlockChest.correctFacing`),
   driven by `TerrainGen::populate_mineshaft_chunk` / `populate_scattered_chunk`; `mc-worldgen::decorate` (**all decoration layers incl. the per-biome `decorate` overrides**: the
   `DecorateWorld`/`Chunk` block + height-map + column-skylight shim, `ChunkProviderSettings` defaults,
   `WorldGenMinable` ore generation, the surface `WorldGenSand`/`WorldGenClay`/gravel loops, the
@@ -146,10 +148,10 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   `worldgen_parity` (canonical chunk: blocks + biome array + height map),
   `structures_parity` (all six structure layouts: mineshaft, temple/hut, monument, fortress, village,
   stronghold), `jhash_parity` (`java.util.HashMap` iteration order), `loot_parity` (loot + enchantment
-  RNG), `mineshaft_placement_parity` (mineshaft block placement), `temple_placement_parity` (swamp-hut
+  RNG), `mineshaft_placement_parity` (mineshaft block placement), `temple_placement_parity` (swamp-hut + desert-pyramid
   block placement), `decoration_parity` (all decoration:
   ores, surface, vegetation, trees, springs, the full chunk with the per-biome overrides).
-  Unit tests: 96 `mc-worldgen`, 13 `mc-core`, 10 `mc-perf`.
+  Unit tests: 98 `mc-worldgen`, 13 `mc-core`, 10 `mc-perf`.
 - Notable vanilla quirks encoded: `GenLayerHills.field_151628_d` unseeded top Zooms; Mesa cache
   `Random(0)` + `func_150619_a` orange-loop `+2` step; `ChunkPrimer` x/z transposition in
   `generateBiomeTerrain`; caves and ravines reach biomes through the **biome cache** (index
@@ -162,10 +164,10 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 ## Next steps (prioritized, each with a pass condition)
 
-**Recommended next: the remaining structure block placement** (desert/jungle pyramid, then the ocean
+**Recommended next: the remaining structure block placement** (the jungle pyramid, then the ocean
 monument, nether fortress, village and stronghold). The generic `+8` populate driver and the
-`StructureComponent` helpers are shared; the swamp hut is the first non-mineshaft piece and its
-harness (`temple_placement_parity`) is the template. Decoration is complete and parity-gated
+`StructureComponent` helpers are shared; the swamp hut + desert pyramid are ported and their harness
+(`temple_placement_parity`) is the template. Decoration is complete and parity-gated
 end-to-end (`decoration_parity`'s `full` mode). With all structure placement done, the full Gate-C
 chunk (blocks + metadata + biome + heightmap) is reachable and `worldgen_parity` can take the Gate-C
 name. P0's remaining items need a running binary.
@@ -180,9 +182,9 @@ name. P0's remaining items need a running binary.
    (`structure/netherbridge.rs` + `structures_parity`); village **layout** done
    (`structure/village.rs` + `structures_parity`); stronghold **layout** done
    (`structure/stronghold.rs` + `structures_parity`); **decoration complete** (`decorate.rs` +
-   `decoration_parity`, incl. the per-biome `decorate` overrides in the `full` mode); **swamp-hut
-   block placement** done (`structure/placement.rs` + `temple_placement_parity`). All six
-   structure layouts are ported; remaining: **block placement** for the desert/jungle pyramids, ocean
+   `decoration_parity`, incl. the per-biome `decorate` overrides in the `full` mode); **swamp hut +
+   desert pyramid block placement** done (`structure/placement.rs` + `temple_placement_parity`). All six
+   structure layouts are ported; remaining: **block placement** for the jungle pyramid, ocean
    monument, nether fortress, village and stronghold. Then the full chunk (blocks + metadata + biome + heightmap) for the Gate-C
    seeds/chunks is reachable and `worldgen_parity` can take the Gate-C name.
    *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
@@ -449,20 +451,24 @@ name. P0's remaining items need a running binary.
   `world.setBlockState` -> `getChunkFromBlockCoords` -> `provider.provideChunk`; the 3x3 is
   pre-provided so a write never generates a chunk mid-`generateStructure` (which would mutate
   `structureMap`).
-- **Temple placement (1g, swamp hut done):** `TerrainGen::populate_scattered_chunk(cx, cz)` reuses the
-  same `+8` driver shape, walking the registered scattered starts whose box meets each pass box
-  (`ScatteredFeature::for_each_start_meeting_mut`). The swamp hut is ported; the desert/jungle
-  pyramids are still layout-only (their `addComponentParts` arms return `true`). Two details:
+- **Temple placement (1g, swamp hut + desert pyramid done):** `TerrainGen::populate_scattered_chunk(cx, cz)`
+  reuses the same `+8` driver shape, walking the registered scattered starts whose box meets each pass
+  box (`ScatteredFeature::for_each_start_meeting_mut`). The swamp hut and desert pyramid are ported;
+  the jungle pyramid is still layout-only (its `addComponentParts` arm returns `true`). Key details:
   `ComponentScatteredFeaturePieces.Feature.func_74935_a` averages
   `max(getTopSolidOrLiquidBlock, WorldProvider.getAverageGroundLevel())` over the piece/pass-box
-  intersection and offsets the piece (`getAverageGroundLevel` is `seaLevel + 1` = **64**, not 63), and
-  the jungle/swamp pieces call it on the first covering pass, so state carries across passes (the
-  corpus checks forward vs reverse with `TEMPLE_REVERSE`). `replaceAirAndLiquidDownwards` and the
-  stair `getMetadataWithOffset` are shared helpers. Harness `temple_placement_parity`
-  (`TemplePlacementOracle.java` + `examples/temple_probe.rs`): the swamp huts at seed 0 (3,47) and
-  seed 12345 (-26,49), **514 lines / 282 structure blocks** match. The desert/jungle pyramids will
-  extend this corpus (they need the temple chest lists + `BlockChest.correctFacing` and the jungle
-  dispensers/tripwires).
+  intersection and offsets the piece (`getAverageGroundLevel` is `seaLevel + 1` = **64**, not 63); the
+  jungle/swamp pieces call it on the first covering pass, so state carries across passes (the corpus
+  checks forward vs reverse with `TEMPLE_REVERSE`). The desert pyramid has **no** height adjustment; it
+  uses `replaceAirAndLiquidDownwards` for its foundation and places four chests (one per horizontal
+  facing, in `Plane.HORIZONTAL` order) whose `BlockChest.correctFacing` metadata depends on the solid
+  neighbours; its loot list is `loot::chest::TEMPLE_CHEST_CONTENT` (+ a random book) and the inventory
+  draws are `TileEntityChest`'s 27 slots. Harness `temple_placement_parity`
+  (`TemplePlacementOracle.java` + `examples/temple_probe.rs`): swamp huts at seed 0 (3,47) / seed 12345
+  (-26,49) and the desert pyramid at seed -7 (4,2) - **771 lines / 340 structure blocks** match. The
+  jungle pyramid will extend this corpus (it needs `fillWithRandomizedBlocks`'s cobble/mossy selector,
+  dispensers, tripwire hooks, levers, pistons and repeaters, i.e. the generic `getMetadataWithOffset`
+  branches for directional blocks).
 - **Decoration (1e/1f):** the per-layer oracle is a **guarded mirror** of
   `BiomeDecorator.genDecorations` (the feature groups are entangled: `generateOres` always runs,
   `treesPerChunk`/plant counts gate loops but the two mushroom `if`s, the unconditional 10-reeds loop
@@ -869,3 +875,20 @@ name. P0's remaining items need a running binary.
   4 new unit tests (**96 `mc-worldgen`**, 119 total). `verify.ps1`: **14/14**. **Remaining structure
   block placement:** desert/jungle temple bodies (chest lists + `BlockChest.correctFacing`, jungle
   dispensers/tripwires), then ocean monument, nether fortress, village, stronghold.
+- **2026-11-23 - session 25 (structure block placement: desert pyramid).** Ported
+  `ComponentScatteredFeaturePieces.DesertPyramid.addComponentParts` into `structure/placement.rs`:
+  the sandstone stepped shell + foundation (`replaceAirAndLiquidDownwards`), the three entrances and
+  their `getMetadataWithOffset` stairs, the facade strips, the treasure chamber (TNT, pressure plate,
+  chiseled/smooth sandstone) and the four chests. Added `loot::chest::TEMPLE_CHEST_CONTENT` (the
+  10-entry temple list, total weight 71) and the chest helpers: `chest_facing_meta`
+  (`BlockChest.correctFacing`, the facing-index meta) and `temple_chest`
+  (`generateChestContents` -> 27 slots; the loot draws are consumed only when the chest is placed,
+  while the book + `2 + nextInt(5)` draws happen unconditionally). Added `Facing::{index, opposite,
+  rotate_y, offset}` to the structure model. Key spec details: `BlockSandStone.EnumType`
+  DEFAULT/CHISELED/SMOOTH = 0/1/2; the stair default state is meta **3** (`5 - NORTH.index()`);
+  stained clay `~ORANGE.dyeDamage & 15` = orange meta 1 and `~BLUE.dyeDamage & 15` = blue meta 11.
+  `temple_placement_parity` grew the desert-pyramid fixture (seed -7 (4,2)): **771 lines / 340
+  structure blocks** across 3 seeds, order-independent. 2 new unit tests (**98 `mc-worldgen`**, 121
+  total). `verify.ps1`: **14/14**. **Next:** the jungle pyramid (randomized cobble/mossy blocks,
+  dispensers, tripwire hooks/levers/pistons/repeaters -> the generic `getMetadataWithOffset` branches),
+  then ocean monument, nether fortress, village, stronghold.

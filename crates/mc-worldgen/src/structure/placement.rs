@@ -32,7 +32,9 @@ use super::{BoundingBox, Facing, Piece, PieceKind};
 use crate::chunk::{is_full_block, material_is_air, material_is_liquid};
 use crate::decorate::blocks::{material_blocks_movement, material_is_leaves};
 use crate::loot::chest::MINESHAFT_CHEST_CONTENT;
-use crate::loot::chest::{enchanted_book_content, generate_chest_contents, with_extra};
+use crate::loot::chest::{
+    enchanted_book_content, generate_chest_contents, with_extra, TEMPLE_CHEST_CONTENT,
+};
 
 /// `WorldProvider.getAverageGroundLevel()` = `world.getSeaLevel() + 1` (63 + 1 for the overworld).
 const AVERAGE_GROUND_LEVEL: i32 = 64;
@@ -555,10 +557,11 @@ pub fn add_component_parts(
         } => cross(&comp, world, chunk, *multiple_floors),
         PieceKind::MineshaftRoom { linked_rooms } => room(&comp, world, chunk, linked_rooms),
         PieceKind::MineshaftStairs => stairs(&comp, world, chunk),
-        // Scattered-feature block placement is not ported yet (layout only). Nothing reaches this
-        // arm today: `populate` only walks the registered mineshafts. Kept `true` (piece retained)
-        // so an accidental walk never silently drops a piece.
-        PieceKind::TempleDesertPyramid { .. } => true,
+        // Desert pyramid + swamp hut are ported; the jungle pyramid is still layout-only (kept
+        // `true` so a walk never silently drops the piece).
+        PieceKind::TempleDesertPyramid { size, chests, .. } => {
+            desert_pyramid(&comp, world, rand, chunk, *size, chests)
+        }
         PieceKind::TempleJunglePyramid { .. } => true,
         PieceKind::TempleSwampHut { witch, .. } => swamp_hut(&comp, world, chunk, witch),
         // Monument block placement is not ported yet (registration/layout only). Nothing reaches
@@ -1064,6 +1067,468 @@ fn swamp_hut(
     true
 }
 
+/// `ComponentScatteredFeaturePieces.DesertPyramid.addComponentParts`.
+fn desert_pyramid(
+    comp: &Component,
+    world: &mut ChunkWorld,
+    rand: &mut JavaRandom,
+    chunk: &BoundingBox,
+    size: [i32; 3],
+    placed_chests: &mut [bool; 4],
+) -> bool {
+    const SANDSTONE: u16 = 24 << 4;
+    const CHISELED: u16 = (24 << 4) | 1;
+    const SMOOTH: u16 = (24 << 4) | 2;
+    const STAIRS: u16 = 128 << 4;
+    const CLAY_ORANGE: u16 = (159 << 4) | 1;
+    const CLAY_BLUE: u16 = (159 << 4) | 11;
+    const SLAB: u16 = (44 << 4) | 1;
+    const PLATE: u16 = 70 << 4;
+    const TNT: u16 = 46 << 4;
+    let (sx, sz) = (size[0], size[2]);
+
+    // Base floor and stepped shell.
+    comp.fill_with_blocks(
+        world,
+        chunk,
+        0,
+        -4,
+        0,
+        sx - 1,
+        0,
+        sz - 1,
+        SANDSTONE,
+        SANDSTONE,
+        false,
+    );
+    for i in 1..=9 {
+        comp.fill_with_blocks(
+            world,
+            chunk,
+            i,
+            i,
+            i,
+            sx - 1 - i,
+            i,
+            sz - 1 - i,
+            SANDSTONE,
+            SANDSTONE,
+            false,
+        );
+        comp.fill_with_blocks(
+            world,
+            chunk,
+            i + 1,
+            i,
+            i + 1,
+            sx - 2 - i,
+            i,
+            sz - 2 - i,
+            AIR,
+            AIR,
+            false,
+        );
+    }
+
+    // Foundation down to the first solid block.
+    for x in 0..sx {
+        for z in 0..sz {
+            comp.replace_air_and_liquid_downwards(world, chunk, SANDSTONE, x, -5, z);
+        }
+    }
+
+    let v15 = stairs_meta_with_offset(comp.facing, 3);
+    let v16 = stairs_meta_with_offset(comp.facing, 2);
+    let v17 = stairs_meta_with_offset(comp.facing, 0);
+    let v7 = stairs_meta_with_offset(comp.facing, 1);
+    let stairs = |m: i32| STAIRS | (m as u16);
+
+    // West entrance.
+    comp.fill_with_blocks(world, chunk, 0, 0, 0, 4, 9, 4, SANDSTONE, AIR, false);
+    comp.fill_with_blocks(
+        world, chunk, 1, 10, 1, 3, 10, 3, SANDSTONE, SANDSTONE, false,
+    );
+    comp.set_block_state(world, stairs(v15), 2, 10, 0, chunk);
+    comp.set_block_state(world, stairs(v16), 2, 10, 4, chunk);
+    comp.set_block_state(world, stairs(v17), 0, 10, 2, chunk);
+    comp.set_block_state(world, stairs(v7), 4, 10, 2, chunk);
+
+    // East entrance.
+    comp.fill_with_blocks(
+        world,
+        chunk,
+        sx - 5,
+        0,
+        0,
+        sx - 1,
+        9,
+        4,
+        SANDSTONE,
+        AIR,
+        false,
+    );
+    comp.fill_with_blocks(
+        world,
+        chunk,
+        sx - 4,
+        10,
+        1,
+        sx - 2,
+        10,
+        3,
+        SANDSTONE,
+        SANDSTONE,
+        false,
+    );
+    comp.set_block_state(world, stairs(v15), sx - 3, 10, 0, chunk);
+    comp.set_block_state(world, stairs(v16), sx - 3, 10, 4, chunk);
+    comp.set_block_state(world, stairs(v17), sx - 5, 10, 2, chunk);
+    comp.set_block_state(world, stairs(v7), sx - 1, 10, 2, chunk);
+
+    // North entrance.
+    comp.fill_with_blocks(world, chunk, 8, 0, 0, 12, 4, 4, SANDSTONE, AIR, false);
+    comp.fill_with_blocks(world, chunk, 9, 1, 0, 11, 3, 4, AIR, AIR, false);
+    for (x, y, z) in [
+        (9, 1, 1),
+        (9, 2, 1),
+        (9, 3, 1),
+        (10, 3, 1),
+        (11, 3, 1),
+        (11, 2, 1),
+        (11, 1, 1),
+    ] {
+        comp.set_block_state(world, SMOOTH, x, y, z, chunk);
+    }
+    comp.fill_with_blocks(world, chunk, 4, 1, 1, 8, 3, 3, SANDSTONE, AIR, false);
+    comp.fill_with_blocks(world, chunk, 4, 1, 2, 8, 2, 2, AIR, AIR, false);
+    comp.fill_with_blocks(world, chunk, 12, 1, 1, 16, 3, 3, SANDSTONE, AIR, false);
+    comp.fill_with_blocks(world, chunk, 12, 1, 2, 16, 2, 2, AIR, AIR, false);
+
+    // Roof plaza and corner pillars.
+    comp.fill_with_blocks(
+        world,
+        chunk,
+        5,
+        4,
+        5,
+        sx - 6,
+        4,
+        sz - 6,
+        SANDSTONE,
+        SANDSTONE,
+        false,
+    );
+    comp.fill_with_blocks(world, chunk, 9, 4, 9, 11, 4, 11, AIR, AIR, false);
+    for (x, z) in [(8, 8), (12, 8), (8, 12), (12, 12)] {
+        comp.fill_with_blocks(world, chunk, x, 1, z, x, 3, z, SMOOTH, SMOOTH, false);
+    }
+
+    // Side walls and upper posts.
+    comp.fill_with_blocks(world, chunk, 1, 1, 5, 4, 4, 11, SANDSTONE, SANDSTONE, false);
+    comp.fill_with_blocks(
+        world,
+        chunk,
+        sx - 5,
+        1,
+        5,
+        sx - 2,
+        4,
+        11,
+        SANDSTONE,
+        SANDSTONE,
+        false,
+    );
+    comp.fill_with_blocks(world, chunk, 6, 7, 9, 6, 7, 11, SANDSTONE, SANDSTONE, false);
+    comp.fill_with_blocks(
+        world,
+        chunk,
+        sx - 7,
+        7,
+        9,
+        sx - 7,
+        7,
+        11,
+        SANDSTONE,
+        SANDSTONE,
+        false,
+    );
+    comp.fill_with_blocks(world, chunk, 5, 5, 9, 5, 7, 11, SMOOTH, SMOOTH, false);
+    comp.fill_with_blocks(
+        world,
+        chunk,
+        sx - 6,
+        5,
+        9,
+        sx - 6,
+        7,
+        11,
+        SMOOTH,
+        SMOOTH,
+        false,
+    );
+    for (x, y) in [
+        (5, 5),
+        (5, 6),
+        (6, 6),
+        (sx - 6, 5),
+        (sx - 6, 6),
+        (sx - 7, 6),
+    ] {
+        comp.set_block_state(world, AIR, x, y, 10, chunk);
+    }
+
+    // Side niches.
+    comp.fill_with_blocks(world, chunk, 2, 4, 4, 2, 6, 4, AIR, AIR, false);
+    comp.fill_with_blocks(world, chunk, sx - 3, 4, 4, sx - 3, 6, 4, AIR, AIR, false);
+    comp.set_block_state(world, stairs(v15), 2, 4, 5, chunk);
+    comp.set_block_state(world, stairs(v15), 2, 3, 4, chunk);
+    comp.set_block_state(world, stairs(v15), sx - 3, 4, 5, chunk);
+    comp.set_block_state(world, stairs(v15), sx - 3, 3, 4, chunk);
+
+    // Front slabs and stairs (the default stair state is meta 3).
+    comp.fill_with_blocks(world, chunk, 1, 1, 3, 2, 2, 3, SANDSTONE, SANDSTONE, false);
+    comp.fill_with_blocks(
+        world,
+        chunk,
+        sx - 3,
+        1,
+        3,
+        sx - 2,
+        2,
+        3,
+        SANDSTONE,
+        SANDSTONE,
+        false,
+    );
+    comp.set_block_state(world, STAIRS | 3, 1, 1, 2, chunk);
+    comp.set_block_state(world, STAIRS | 3, sx - 2, 1, 2, chunk);
+    comp.set_block_state(world, SLAB, 1, 2, 2, chunk);
+    comp.set_block_state(world, SLAB, sx - 2, 2, 2, chunk);
+    comp.set_block_state(world, stairs(v7), 2, 1, 2, chunk);
+    comp.set_block_state(world, stairs(v17), sx - 3, 1, 2, chunk);
+
+    // Interior corridors.
+    comp.fill_with_blocks(world, chunk, 4, 3, 5, 4, 3, 18, SANDSTONE, SANDSTONE, false);
+    comp.fill_with_blocks(
+        world,
+        chunk,
+        sx - 5,
+        3,
+        5,
+        sx - 5,
+        3,
+        17,
+        SANDSTONE,
+        SANDSTONE,
+        false,
+    );
+    comp.fill_with_blocks(world, chunk, 3, 1, 5, 4, 2, 16, AIR, AIR, false);
+    comp.fill_with_blocks(world, chunk, sx - 6, 1, 5, sx - 5, 2, 16, AIR, AIR, false);
+    for i in (5..=17).step_by(2) {
+        comp.set_block_state(world, SMOOTH, 4, 1, i, chunk);
+        comp.set_block_state(world, CHISELED, 4, 2, i, chunk);
+        comp.set_block_state(world, SMOOTH, sx - 5, 1, i, chunk);
+        comp.set_block_state(world, CHISELED, sx - 5, 2, i, chunk);
+    }
+
+    // Orange/blue clay motif.
+    for (x, z) in [
+        (10, 7),
+        (10, 8),
+        (9, 9),
+        (11, 9),
+        (8, 10),
+        (12, 10),
+        (7, 10),
+        (13, 10),
+        (9, 11),
+        (11, 11),
+        (10, 12),
+        (10, 13),
+    ] {
+        comp.set_block_state(world, CLAY_ORANGE, x, 0, z, chunk);
+    }
+    comp.set_block_state(world, CLAY_BLUE, 10, 0, 10, chunk);
+
+    // Side facade strips at x = 0 and x = sx-1.
+    for x in [0, sx - 1] {
+        comp.set_block_state(world, SMOOTH, x, 2, 1, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 2, 2, chunk);
+        comp.set_block_state(world, SMOOTH, x, 2, 3, chunk);
+        comp.set_block_state(world, SMOOTH, x, 3, 1, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 3, 2, chunk);
+        comp.set_block_state(world, SMOOTH, x, 3, 3, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 4, 1, chunk);
+        comp.set_block_state(world, CHISELED, x, 4, 2, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 4, 3, chunk);
+        comp.set_block_state(world, SMOOTH, x, 5, 1, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 5, 2, chunk);
+        comp.set_block_state(world, SMOOTH, x, 5, 3, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 6, 1, chunk);
+        comp.set_block_state(world, CHISELED, x, 6, 2, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 6, 3, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 7, 1, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 7, 2, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 7, 3, chunk);
+        comp.set_block_state(world, SMOOTH, x, 8, 1, chunk);
+        comp.set_block_state(world, SMOOTH, x, 8, 2, chunk);
+        comp.set_block_state(world, SMOOTH, x, 8, 3, chunk);
+    }
+
+    // Front facade strips at z = 0, centred on x = 2 and x = sx-3.
+    for x in [2, sx - 3] {
+        comp.set_block_state(world, SMOOTH, x - 1, 2, 0, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 2, 0, chunk);
+        comp.set_block_state(world, SMOOTH, x + 1, 2, 0, chunk);
+        comp.set_block_state(world, SMOOTH, x - 1, 3, 0, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 3, 0, chunk);
+        comp.set_block_state(world, SMOOTH, x + 1, 3, 0, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x - 1, 4, 0, chunk);
+        comp.set_block_state(world, CHISELED, x, 4, 0, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x + 1, 4, 0, chunk);
+        comp.set_block_state(world, SMOOTH, x - 1, 5, 0, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 5, 0, chunk);
+        comp.set_block_state(world, SMOOTH, x + 1, 5, 0, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x - 1, 6, 0, chunk);
+        comp.set_block_state(world, CHISELED, x, 6, 0, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x + 1, 6, 0, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x - 1, 7, 0, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x, 7, 0, chunk);
+        comp.set_block_state(world, CLAY_ORANGE, x + 1, 7, 0, chunk);
+        comp.set_block_state(world, SMOOTH, x - 1, 8, 0, chunk);
+        comp.set_block_state(world, SMOOTH, x, 8, 0, chunk);
+        comp.set_block_state(world, SMOOTH, x + 1, 8, 0, chunk);
+    }
+
+    // Entrance frame.
+    comp.fill_with_blocks(world, chunk, 8, 4, 0, 12, 6, 0, SMOOTH, SMOOTH, false);
+    comp.set_block_state(world, AIR, 8, 6, 0, chunk);
+    comp.set_block_state(world, AIR, 12, 6, 0, chunk);
+    comp.set_block_state(world, CLAY_ORANGE, 9, 5, 0, chunk);
+    comp.set_block_state(world, CHISELED, 10, 5, 0, chunk);
+    comp.set_block_state(world, CLAY_ORANGE, 11, 5, 0, chunk);
+
+    // Treasure chamber.
+    comp.fill_with_blocks(world, chunk, 8, -14, 8, 12, -11, 12, SMOOTH, SMOOTH, false);
+    comp.fill_with_blocks(
+        world, chunk, 8, -10, 8, 12, -10, 12, CHISELED, CHISELED, false,
+    );
+    comp.fill_with_blocks(world, chunk, 8, -9, 8, 12, -9, 12, SMOOTH, SMOOTH, false);
+    comp.fill_with_blocks(
+        world, chunk, 8, -8, 8, 12, -1, 12, SANDSTONE, SANDSTONE, false,
+    );
+    comp.fill_with_blocks(world, chunk, 9, -11, 9, 11, -1, 11, AIR, AIR, false);
+    comp.set_block_state(world, PLATE, 10, -11, 10, chunk);
+    comp.fill_with_blocks(world, chunk, 9, -13, 9, 11, -13, 11, TNT, AIR, false);
+
+    // Chamber entrances.
+    comp.set_block_state(world, AIR, 8, -11, 10, chunk);
+    comp.set_block_state(world, AIR, 8, -10, 10, chunk);
+    comp.set_block_state(world, CHISELED, 7, -10, 10, chunk);
+    comp.set_block_state(world, SMOOTH, 7, -11, 10, chunk);
+    comp.set_block_state(world, AIR, 12, -11, 10, chunk);
+    comp.set_block_state(world, AIR, 12, -10, 10, chunk);
+    comp.set_block_state(world, CHISELED, 13, -10, 10, chunk);
+    comp.set_block_state(world, SMOOTH, 13, -11, 10, chunk);
+    comp.set_block_state(world, AIR, 10, -11, 8, chunk);
+    comp.set_block_state(world, AIR, 10, -10, 8, chunk);
+    comp.set_block_state(world, CHISELED, 10, -10, 7, chunk);
+    comp.set_block_state(world, SMOOTH, 10, -11, 7, chunk);
+    comp.set_block_state(world, AIR, 10, -11, 12, chunk);
+    comp.set_block_state(world, AIR, 10, -10, 12, chunk);
+    comp.set_block_state(world, CHISELED, 10, -10, 13, chunk);
+    comp.set_block_state(world, SMOOTH, 10, -11, 13, chunk);
+
+    // One chest per horizontal direction (the loop order is vanilla's `Plane.HORIZONTAL`).
+    for facing in [Facing::North, Facing::East, Facing::South, Facing::West] {
+        let idx = facing.horizontal_index() as usize;
+        if placed_chests[idx] {
+            continue;
+        }
+        let (fx, fz) = facing.offset();
+        let book = enchanted_book_content(rand);
+        let count = 2 + rand.next_int_bound(5);
+        let list = with_extra(&TEMPLE_CHEST_CONTENT, book);
+        placed_chests[idx] = temple_chest(
+            comp,
+            world,
+            rand,
+            chunk,
+            10 + fx * 2,
+            -11,
+            10 + fz * 2,
+            &list,
+            count,
+        );
+    }
+
+    true
+}
+
+/// `BlockChest.correctFacing` -> the chest's facing-index metadata.
+fn chest_facing_meta(world: &ChunkWorld, x: i32, y: i32, z: i32) -> u16 {
+    const CHEST: i32 = 54;
+    let mut selected: Option<Facing> = None;
+    for f in [Facing::North, Facing::East, Facing::South, Facing::West] {
+        let (dx, dz) = f.offset();
+        let id = (world.get(x + dx, y, z + dz) >> 4) as i32;
+        if id == CHEST {
+            return Facing::North.index() as u16;
+        }
+        if is_full_block(id) {
+            if selected.is_some() {
+                selected = None;
+                break;
+            }
+            selected = Some(f);
+        }
+    }
+    if let Some(f) = selected {
+        return f.opposite().index() as u16;
+    }
+
+    let mut facing = Facing::North;
+    let (dx, dz) = facing.offset();
+    if is_full_block((world.get(x + dx, y, z + dz) >> 4) as i32) {
+        facing = facing.opposite();
+    }
+    let (dx, dz) = facing.offset();
+    if is_full_block((world.get(x + dx, y, z + dz) >> 4) as i32) {
+        facing = facing.rotate_y();
+    }
+    let (dx, dz) = facing.offset();
+    if is_full_block((world.get(x + dx, y, z + dz) >> 4) as i32) {
+        facing = facing.opposite();
+    }
+    facing.index() as u16
+}
+
+/// `StructureComponent.generateChestContents` for a temple: place a (facing-corrected) chest and roll
+/// its loot. `TileEntityChest` has 27 slots; the drawn stacks are discarded (the dump is blocks only).
+#[allow(clippy::too_many_arguments)]
+fn temple_chest(
+    comp: &Component,
+    world: &mut ChunkWorld,
+    rand: &mut JavaRandom,
+    chunk: &BoundingBox,
+    x: i32,
+    y: i32,
+    z: i32,
+    list: &[crate::loot::ChestContent],
+    count: i32,
+) -> bool {
+    let px = comp.get_x_with_offset(x, z);
+    let py = comp.get_y_with_offset(y);
+    let pz = comp.get_z_with_offset(x, z);
+    if !chunk.is_vec_inside(px, py, pz) || (world.get(px, py, pz) >> 4) as i32 == 54 {
+        return false;
+    }
+    let meta = chest_facing_meta(world, px, py, pz);
+    world.set(px, py, pz, (54 << 4) | meta);
+    generate_chest_contents(rand, list, 27, count, |_slot, _content, _size| {});
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1335,5 +1800,55 @@ mod tests {
         assert_eq!(at(&world, 1, 68, 0) >> 4, 134);
         // Relative (2, 3, 2) -> world (minX + 2, minY + 3, minZ + 2) = (2, 67, 2): a fence post.
         assert_eq!(at(&world, 2, 67, 2) >> 4, 85);
+    }
+
+    /// `BlockChest.correctFacing`: exactly one solid neighbour faces the chest away from it.
+    #[test]
+    fn chest_facing_uses_the_single_solid_neighbour() {
+        let mut world = ChunkWorld::new();
+        world.insert_chunk(0, 0, vec![0u16; 65536]); // all air
+                                                     // Solid block to the north -> the chest faces south (index 3).
+        world.set(8, 10, 7, STONE);
+        assert_eq!(
+            chest_facing_meta(&world, 8, 10, 8),
+            Facing::South.index() as u16
+        );
+        // With no solid neighbour the fallback keeps the default facing (north, index 2).
+        world.set(8, 10, 7, 0);
+        assert_eq!(
+            chest_facing_meta(&world, 8, 10, 8),
+            Facing::North.index() as u16
+        );
+    }
+
+    /// The desert pyramid lays its base floor and sets the chest flags.
+    #[test]
+    fn desert_pyramid_lays_its_base_floor() {
+        let mut world = stone_world();
+        let mut piece = Piece {
+            kind: PieceKind::TempleDesertPyramid {
+                size: [21, 15, 21],
+                h_pos: -1,
+                chests: [false; 4],
+            },
+            coord_base_mode: Some(Facing::East),
+            component_type: 0,
+            bbox: BoundingBox::new(0, 64, 0, 20, 78, 20),
+        };
+        let chunk = BoundingBox::new(0, 1, 0, 31, 512, 31);
+        let mut rand = JavaRandom::new(0);
+        assert!(add_component_parts(
+            &mut piece, &mut world, &mut rand, &chunk
+        ));
+        // Relative (0, -4, 0) -> world (0, 60, 0): the sandstone base floor.
+        assert_eq!(at(&world, 0, 60, 0), 24 << 4);
+        // The four chests are placed.
+        assert!(matches!(
+            piece.kind,
+            PieceKind::TempleDesertPyramid {
+                chests: [true, true, true, true],
+                ..
+            }
+        ));
     }
 }
