@@ -15,7 +15,8 @@
 //!   (`Voronoi`) layer at the block coordinate `(chunk*16 + 8)`. This module is handed a biome lookup
 //!   closure so it does not depend on the layer internals.
 //!
-//! Block placement is not ported yet (layout only); see `structure/placement.rs`.
+//! Block placement lives in `structure/placement.rs`: the swamp hut is ported; the desert and jungle
+//! pyramids are still layout-only.
 
 use std::collections::BTreeMap;
 
@@ -101,6 +102,24 @@ impl ScatteredFeature {
             .filter(|s| s.intersects_chunk(chunk_x, chunk_z))
             .cloned()
             .collect()
+    }
+
+    /// Mutable access to every registered start whose bounding box meets the 16x16 area
+    /// `[x0..=x1] x [z0..=z1]` (the `MapGenStructure.generateStructure` walk). Mutation matters:
+    /// `func_74935_a` offsets a jungle pyramid / swamp hut's box on its first placement pass.
+    pub fn for_each_start_meeting_mut(
+        &mut self,
+        x0: i32,
+        z0: i32,
+        x1: i32,
+        z1: i32,
+        mut f: impl FnMut(&mut StructureStart),
+    ) {
+        for start in self.starts.values_mut() {
+            if start.sizeable && start.bbox.intersects_with_xz(x0, z0, x1, z1) {
+                f(start);
+            }
+        }
     }
 
     /// `MapGenStructure.structureMap` size (for tests/diagnostics).

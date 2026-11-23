@@ -193,8 +193,9 @@ nether fortresses, villages and strongholds. Structure *blocks* are written in `
 mineshaft half is
 now ported (`mineshaft_placement_parity`) together with the RNG its chests consume (`loot_parity`:
 `WeightedRandomChestContent` + `EnchantmentHelper.buildEnchantmentList`); all six structure layouts
-are now ported, so the remaining work for Gate C is **structure block placement for the five
-non-mineshaft generators**. (Vanilla's `onBlockAdded`
+are now ported, so the remaining work for Gate C is **structure block placement** for the
+desert/jungle pyramids, ocean monument, nether fortress, village and stronghold (the swamp hut and
+mineshaft are done; `temple_placement_parity` gates the hut). (Vanilla's `onBlockAdded`
 block-update consequences - rail reshaping, torch support - are outside the placement port; see
 `handoff.md`.)
 
@@ -342,6 +343,7 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | Mineshafts + scattered features + monuments + nether fortresses + villages + strongholds (layout) | `crates/mc-worldgen/src/structure/` (mod + `mineshaft.rs` + `scattered.rs` + `monument.rs` + `netherbridge.rs` + `village.rs` + `stronghold.rs`) + `tools/test_structures_parity.py` (+ `StructuresOracle.java`) | ✅ `structures_parity` green: 10,533 lines match (all six generators' starts, pieces, boxes; block placement pending) |
 | Loot + enchantment RNG | `crates/mc-worldgen/src/loot.rs` + `tools/test_loot_parity.py` (+ `LootOracle.java`) | ✅ `loot_parity` green: 695 lines match (registry + `buildEnchantmentList` + `generateChestContents`; unblocks chest placement) |
 | Mineshaft block placement | `crates/mc-worldgen/src/structure/placement.rs` + `tools/test_mineshaft_placement_parity.py` (+ `MineshaftPlacementOracle.java`) | ✅ `mineshaft_placement_parity` green: 3,598 lines match (3 seeds x 14 chunks, 426 structure blocks; curated corpus - see `handoff.md`) |
+| Temple block placement (swamp hut) | `crates/mc-worldgen/src/structure/placement.rs` + `tools/test_temple_placement_parity.py` (+ `TemplePlacementOracle.java`) | ✅ `temple_placement_parity` green: 514 lines match (2 seeds x 2 chunks, 282 structure blocks; desert/jungle pyramids still layout-only) |
 | Decoration (all layers + per-biome overrides) | `crates/mc-worldgen/src/decorate.rs` + `decorate/blocks.rs` + `decorate/trees.rs` + `tools/test_decoration_parity.py` (+ `DecorationOracle.java`) | ✅ `decoration_parity` green: 32,896 lines match (7 modes x 3 seeds: ores, surface, plants, trees, springs, ore_surface, `full` = real `BiomeGenBase.decorate` incl. double plants/melon/vines/ice/boulders/emerald/monster-egg/desert wells) |
 | Java HashMap order | `crates/mc-core/src/jhash.rs` + `tools/test_jhash_parity.py` (+ `HashOrderOracle.java`) | ✅ `jhash_parity` green: 16 insertion orders / 301 keys match `keySet()` order (unblocks chest-enchantment RNG) |
 | Block table | `oracle/java/src/BlockTableOracle.java` → `chunk::light_opacity` | ✅ dumped from the live game (opacity per block id + material-air set) |

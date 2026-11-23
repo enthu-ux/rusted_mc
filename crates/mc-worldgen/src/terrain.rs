@@ -737,6 +737,37 @@ impl TerrainGen {
         world.chunk_blocks(chunk_x, chunk_z).to_vec()
     }
 
+    /// `ChunkProviderGenerate.populate`'s scattered-feature passes for one chunk: the target
+    /// chunk's blocks after the four covering populate passes write their temple pieces.
+    ///
+    /// Same `+8` driver shape as [`Self::populate_mineshaft_chunk`]. A temple's `func_74935_a`
+    /// offsets its box on the first pass (state carries across passes), so the passes run in a fixed
+    /// order and corpora keep order-independent fixtures.
+    pub fn populate_scattered_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Vec<u16> {
+        let mut world = ChunkWorld::new();
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let chunk = self.generate_chunk(chunk_x + dx, chunk_z + dz, GenOptions::vanilla());
+                world.insert_chunk(chunk_x + dx, chunk_z + dz, chunk.blocks);
+            }
+        }
+
+        for a in [chunk_x - 1, chunk_x] {
+            for b in [chunk_z - 1, chunk_z] {
+                let mut rand = placement::populate_rand(self.seed, a, b);
+                let bbox = placement::structure_box(a, b);
+                let x0 = (a << 4) + 8;
+                let z0 = (b << 4) + 8;
+                self.scattered
+                    .for_each_start_meeting_mut(x0, z0, x0 + 15, z0 + 15, |start| {
+                        placement::generate_structure(start, &mut world, &mut rand, &bbox);
+                    });
+            }
+        }
+
+        world.chunk_blocks(chunk_x, chunk_z).to_vec()
+    }
+
     /// `ChunkProviderGenerate.populate`'s decoration: the target chunk's blocks after the four
     /// covering `BiomeDecorator.decorate` passes (the `+8`-offset window, see `crate::decorate`).
     ///
