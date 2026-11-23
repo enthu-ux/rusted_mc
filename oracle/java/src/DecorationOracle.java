@@ -1,9 +1,10 @@
-// Decoration oracle: runs the real `ChunkProviderGenerate` for terrain, then a *guarded* mirror of
-// `BiomeDecorator.genDecorations` (only the layers named by the mode), and prints the target chunk's
-// blocks. Same shape as `MineshaftPlacementOracle`.
+// Decoration oracle: runs the real `ChunkProviderGenerate` for terrain, then either the *real*
+// `BiomeGenBase.decorate` (mode `full`) or a *guarded* mirror of `BiomeDecorator.genDecorations`
+// (only the layers named by the mode), and prints the target chunk's blocks. Same shape as
+// `MineshaftPlacementOracle`.
 //
 // Usage: DecorationOracle <seed> <mode> <cx> <cz> [<cx> <cz> ...]
-//   mode = ores | surface | ore_surface
+//   mode = ores | surface | plants | trees | springs | ore_surface | full
 // Per target chunk:
 //   seed <seed> chunk <cx> <cz>
 //   256 lines "x z v0 ... v255"  (vi = blockId * 16 + metadata)
@@ -38,6 +39,8 @@ import net.minecraft.world.WorldSettings;
 import net.minecraft.world.WorldType;
 import net.minecraft.world.biome.BiomeDecorator;
 import net.minecraft.world.biome.BiomeGenBase;
+import net.minecraft.world.biome.BiomeGenMutated;
+import net.minecraft.world.biome.BiomeGenSavanna;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.gen.ChunkProviderGenerate;
@@ -81,6 +84,10 @@ public class DecorationOracle {
         }
         void setProvider(IChunkProvider p) { this.chunkProvider = p; }
         @Override public boolean checkLight(BlockPos pos) { return false; }
+        // The port models `Chunk`'s *column* skylight only (see `decorate.rs`); horizontal propagation
+        // (`checkLightFor`, triggered by `Chunk.relightBlock` through `updateSkylightNeighborHeight`)
+        // is `light_parity`'s. Disable it so the oracle matches the documented decoration scope.
+        @Override public boolean checkLightFor(net.minecraft.world.EnumSkyBlock lightType, BlockPos pos) { return false; }
     }
 
     static class StubProvider implements IChunkProvider {
@@ -127,6 +134,13 @@ public class DecorationOracle {
             int bx = x * 16;
             int bz = z * 16;
             BlockPos field = new BlockPos(bx, 0, bz);
+            if (mode.contains("full")) {
+                // The real `BiomeGenBase.decorate` (genDecorations + the per-biome overrides) - the
+                // strongest oracle: nothing is mirrored.
+                BiomeGenBase biome = this.world.getBiomeGenForCoords(field.add(16, 0, 16));
+                biome.decorate(this.world, rand, field);
+                return;
+            }
             if (mode.contains("ore")) {
                 generateOres(this.world, rand, field);
             }
@@ -171,7 +185,7 @@ public class DecorationOracle {
     // ---- BiomeDecorator.genDecorations' tree loop ----
 
     static void trees(World world, Random rand, BlockPos field, BiomeGenBase biome) {
-        int count = f(biome.theBiomeDecorator, "treesPerChunk");
+        int count = f(effectiveDecorator(biome), "treesPerChunk");
         if (rand.nextInt(10) == 0) count++;
         for (int i = 0; i < count; i++) {
             int x = rand.nextInt(16) + 8;
@@ -210,8 +224,33 @@ public class DecorationOracle {
         }
     }
 
+    // The decorator a biome's `decorate` actually uses: a plain `BiomeGenMutated` (and the anonymous
+    // forest mutations that forward to `baseBiome.decorate`) runs the *base* biome's decorator;
+    // `BiomeGenSavanna.Mutated` overrides `decorate` to use its own.
+    static Field baseBiomeField;
+    static {
+        try {
+            baseBiomeField = BiomeGenMutated.class.getDeclaredField("baseBiome");
+            baseBiomeField.setAccessible(true);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static BiomeDecorator effectiveDecorator(BiomeGenBase biome) {
+        try {
+            if (biome instanceof BiomeGenMutated && biome.getClass() != BiomeGenSavanna.Mutated.class) {
+                BiomeGenBase base = (BiomeGenBase) baseBiomeField.get(biome);
+                return base.theBiomeDecorator;
+            }
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+        return biome.theBiomeDecorator;
+    }
+
     static void plants(World world, Random rand, BlockPos field, BiomeGenBase biome) {
-        BiomeDecorator d = biome.theBiomeDecorator;
+        BiomeDecorator d = effectiveDecorator(biome);
         WorldGenerator bigGen = g(d, "bigMushroomGen");
         WorldGenerator brownGen = g(d, "mushroomBrownGen");
         WorldGenerator redGen = g(d, "mushroomRedGen");

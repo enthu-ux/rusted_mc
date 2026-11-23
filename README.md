@@ -8,19 +8,19 @@ performance. See `plan.md` §16 for the parity policy and Deviation Registry, an
 ## Status
 
 - Inputs downloaded and verified: 1.8.9 jars, clean vanilla decompile, MCP stable_22, protocol data.
-- Workspace scaffolded (11 crates); `cargo test` and `cargo fmt --check` are green (110 tests).
+- Workspace scaffolded (11 crates); `cargo test` and `cargo fmt --check` are green (115 tests).
 - Parity harnesses green (13): `random_parity`, `noise_parity`, `noise_batch_parity`,
   `biome_layer_parity`, `terrain_parity` (full overworld base terrain), `math_parity`,
   `caves_parity` (caves + ravines), `worldgen_parity` (canonical chunk: blocks + biome + height map),
   `structures_parity` (all six structure layouts: mineshaft, temple/hut, monument, fortress, village,
   stronghold), `jhash_parity` (`java.util.HashMap` iteration order), `loot_parity` (loot + enchantment
-  RNG), `mineshaft_placement_parity` (mineshaft block placement), `decoration_parity` (decoration:
-  ore + surface + vegetation + tree + spring layers so far).
+  RNG), `mineshaft_placement_parity` (mineshaft block placement), `decoration_parity` (all decoration
+  layers incl. the per-biome `decorate` overrides, via the `full` mode).
 - Performance (P0 substrate): `mc-perf` + `docs/performance-contract.md` / `docs/performance-baselines.md`
   (base terrain Rust 1.35 ms/chunk vs Java 1.8.9 3.63 ms/chunk, caveated; per-stage spans recorded).
-- Next: the per-biome `decorate` overrides (double plants, melons, vines, ice, boulders,
-  emerald/monster-egg, desert wells). See `handoff.md` for the exact sequencing and the known scope
-  limits (vanilla's block-update/fluid-mixing cascades are outside the decoration port).
+- Next: structure block placement for the five non-mineshaft generators (then the full Gate-C chunk).
+  See `handoff.md` for the exact sequencing and the known scope limits (vanilla's
+  block-update/fluid-mixing cascades are outside the decoration port).
 
 ## Layout
 

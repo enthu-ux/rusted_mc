@@ -9,7 +9,15 @@ probe (`crates/mc-worldgen/examples/decoration_probe.rs`).
 Decoration is `populate`'s `+8`-offset 16x16 window, so the target chunk is the union of the four
 covering passes; both sides run the same fixed pass order (vanilla's is chunk-load order).
 
-Modes: ores | surface | ore_surface.
+Modes: ores | surface | plants | trees | springs | ore_surface | full.
+
+`full` runs the real `BiomeGenBase.decorate` on the game side (genDecorations + the per-biome
+`decorate` overrides) and the whole `decorate` on ours, so it gates the override layer end-to-end.
+Its corpus includes a jungle (melon), ice-spikes (packed ice), mega taiga (boulders), desert well,
+hills (emerald/monster egg) and plains/forest/savanna (double plants) chunk per seed; a guard
+requires every override signature to appear. The fixture `seed -7 chunk (-48,-48)` (a lava spring
+next to water) stays out of `full` too: its `checkForMixing` cascade is a block-update effect (see
+`handoff.md`), not decoration.
 
 Signal guard: the corpus must actually contain a decorated ore block, else the fixture proves nothing.
 Outputs cached under .local/decoration/.
@@ -35,7 +43,17 @@ CHUNKS = [(0, 0), (100, -50), (-37, 210), (-3, 0), (-48, -48), (6, 5)]
 # lava (a block-update cascade, cf. mineshaft `onBlockAdded`). Spring *placement* is unaffected,
 # so that fixture is kept out of this mode's corpus until the block-update subsystem is ported.
 SPRING_CHUNKS = [(0, 0), (100, -50), (-37, 210), (-3, 0), (6, 5)]
-MODES = ["ores", "surface", "plants", "trees", "springs", "ore_surface"]
+MODES = ["ores", "surface", "plants", "trees", "springs", "ore_surface", "full"]
+# Per-seed corpus for the `full` mode: the base chunks plus overrides fixtures (jungle -> melon,
+# ice spikes -> packed ice, mega taiga -> boulders, desert well, hills -> emerald/monster egg,
+# plains/forest/savanna -> double plants). `-48,-48` is kept except at seed -7 (lava-spring cascade).
+FULL_CHUNKS = {
+    "0": [(0, 0), (100, -50), (-37, 210), (-3, 0), (-48, -48), (6, 5),
+          (-500, -260), (-207, -109)],
+    "12345": [(0, 0), (100, -50), (-37, 210), (-3, 0), (-48, -48), (6, 5)],
+    "-7": [(0, 0), (100, -50), (-37, 210), (-3, 0), (6, 5),
+           (-124, -127), (-118, -127), (-487, -112), (-500, -296)],
+}
 ORE_IDS = {14, 15, 16, 21, 56, 73}
 PLANT_IDS = {31, 32, 37, 38, 39, 40, 81, 83, 86, 99, 100, 111}
 TREE_IDS = {17, 18, 161, 162, 106}
@@ -46,6 +64,16 @@ PLANT_SIGNATURE = {
     "small mushroom (skylight)": {39, 40},
     "cactus": {81},
     "dead bush": {32},
+}
+# Each per-biome `decorate` override the `full` corpus must actually exercise.
+OVERRIDE_SIGNATURE = {
+    "double plant": {175},
+    "melon (jungle)": {103},
+    "packed ice (ice spikes)": {174},
+    "mossy cobblestone (taiga boulders)": {48},
+    "stone slab (desert well)": {44},
+    "emerald ore (hills)": {129},
+    "monster egg (hills)": {97},
 }
 
 
@@ -161,14 +189,22 @@ def main() -> int:
 
     total_lines = 0
     plant_seen: set[int] = set()
+    override_seen: set[int] = set()
     for mode in MODES:
-        chunks = SPRING_CHUNKS if mode == "springs" else CHUNKS
         for seed in SEEDS:
+            if mode == "springs":
+                chunks = SPRING_CHUNKS
+            elif mode == "full":
+                chunks = FULL_CHUNKS[seed]
+            else:
+                chunks = CHUNKS
             vanilla = oracle(seed, mode, chunks)
             rust_out = rust(seed, mode, chunks)
 
             if "plant" in mode:
                 plant_seen |= _block_ids(vanilla)
+            if mode == "full":
+                override_seen |= _block_ids(vanilla)
 
             if "ore" in mode and ore_count(vanilla) == 0:
                 print(f"FIXTURE ERROR: mode {mode} seed {seed}: no ore blocks placed")
@@ -198,8 +234,13 @@ def main() -> int:
             print(f"FIXTURE ERROR: the corpus never places a {name}; add a chunk that exercises it")
             return 1
 
+    for name, ids in OVERRIDE_SIGNATURE.items():
+        if not (override_seen & ids):
+            print(f"FIXTURE ERROR: the full corpus never places a {name}; add a chunk that exercises it")
+            return 1
+
     print(f"OK: {total_lines} lines match ({len(MODES)} modes x {len(SEEDS)} seeds; "
-          f"{len(CHUNKS)} chunks, springs {len(SPRING_CHUNKS)})")
+          f"{len(CHUNKS)} chunks, springs {len(SPRING_CHUNKS)}, full per-seed)")
     return 0
 
 

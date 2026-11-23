@@ -14,11 +14,12 @@ use mc_worldgen::terrain::TerrainGen;
 
 fn options(mode: &str) -> DecorateOptions {
     DecorateOptions {
-        ores: mode.contains("ore"),
-        surface: mode.contains("surface"),
-        trees: mode.contains("tree"),
-        plants: mode.contains("plant"),
-        springs: mode.contains("spring"),
+        ores: mode.contains("ore") || mode.contains("full"),
+        surface: mode.contains("surface") || mode.contains("full"),
+        trees: mode.contains("tree") || mode.contains("full"),
+        plants: mode.contains("plant") || mode.contains("full"),
+        springs: mode.contains("spring") || mode.contains("full"),
+        overrides: mode.contains("full"),
     }
 }
 

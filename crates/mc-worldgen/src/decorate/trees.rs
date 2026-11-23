@@ -138,6 +138,20 @@ pub fn big_tree_chance(biome_id: i32, rand: &mut JavaRandom) -> TreeKind {
             vines: false,
         },
         3 | 20 | 34 | 131 | 162 => hills_chance(rand),
+        // Plain `BiomeGenMutated` biomes delegate `genBigTreeChance` to their base biome.
+        130 => base_chance(rand),
+        133 | 158 => taiga_chance(0, rand),
+        134 => TreeKind::Swamp,
+        149 => jungle_chance(false, rand),
+        151 => jungle_chance(true, rand),
+        // The birch mutations override `genBigTreeChance` with `nextBoolean() ? extra : plain`.
+        155 | 156 => {
+            if rand.next_boolean() {
+                TreeKind::Forest { extra: true }
+            } else {
+                TreeKind::Forest { extra: false }
+            }
+        }
         _ => base_chance(rand),
     }
 }
@@ -834,10 +848,10 @@ fn gen_canopy(world: &mut DecorateWorld, rand: &mut JavaRandom, x: i32, y: i32, 
             canopy_leaf(world, tx + dx, top_y - 1, 1 + tz - dz, leaf);
             canopy_leaf(world, 1 + tx - dx, top_y - 1, 1 + tz - dz, leaf);
             if (dx > -2 || dz > -1) && (dx != -1 || dz != -2) {
-                canopy_leaf(world, tx + dx, top_y, tz + dz, leaf);
-                canopy_leaf(world, 1 + tx - dx, top_y, tz + dz, leaf);
-                canopy_leaf(world, tx + dx, top_y, 1 + tz - dz, leaf);
-                canopy_leaf(world, 1 + tx - dx, top_y, 1 + tz - dz, leaf);
+                canopy_leaf(world, tx + dx, top_y + 1, tz + dz, leaf);
+                canopy_leaf(world, 1 + tx - dx, top_y + 1, tz + dz, leaf);
+                canopy_leaf(world, tx + dx, top_y + 1, 1 + tz - dz, leaf);
+                canopy_leaf(world, 1 + tx - dx, top_y + 1, 1 + tz - dz, leaf);
             }
         }
     }

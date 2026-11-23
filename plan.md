@@ -180,10 +180,10 @@ Version-agnostic and directly address "don't reinvent the wheel":
 - Dump blocks + metadata + biome + heightmap canonically; hash.
 - **Pass:** `python tools/parity.py worldgen_seed` exits 0, **0 mismatched chunks**; on failure, names the **first differing block coordinate**.
 
-**Staged.** All six structure layouts are now ported and decoration has begun (its ore + surface
-layers are parity-gated by `decoration_parity`); the rest of decoration is not yet, and it changes
-blocks, so the Gate-C name stays reserved for the final chunk. The pieces that exist are pinned
-separately:
+**Staged.** All six structure layouts are ported and **decoration is complete** (`decoration_parity`
+gates ores, surface, vegetation, trees, springs and the per-biome `decorate` overrides via its `full`
+mode); it changes blocks, so the Gate-C name stays reserved for the final chunk. The pieces that exist
+are pinned separately:
 `worldgen_parity`
 (`tools/test_worldgen_parity.py`) covers blocks + metadata + biome + heightmap for the
 **pre-decoration** `provideChunk` output on these seeds/chunks (plus cave/ravine/mesa/ocean
@@ -193,9 +193,8 @@ nether fortresses, villages and strongholds. Structure *blocks* are written in `
 mineshaft half is
 now ported (`mineshaft_placement_parity`) together with the RNG its chests consume (`loot_parity`:
 `WeightedRandomChestContent` + `EnchantmentHelper.buildEnchantmentList`); all six structure layouts
-are now ported, so the remaining work for Gate C is decoration (`decoration_parity` gates its ore,
-surface, vegetation, tree and spring layers; the per-biome overrides are pending). (Vanilla's
-`onBlockAdded`
+are now ported, so the remaining work for Gate C is **structure block placement for the five
+non-mineshaft generators**. (Vanilla's `onBlockAdded`
 block-update consequences - rail reshaping, torch support - are outside the placement port; see
 `handoff.md`.)
 
@@ -343,6 +342,7 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | Mineshafts + scattered features + monuments + nether fortresses + villages + strongholds (layout) | `crates/mc-worldgen/src/structure/` (mod + `mineshaft.rs` + `scattered.rs` + `monument.rs` + `netherbridge.rs` + `village.rs` + `stronghold.rs`) + `tools/test_structures_parity.py` (+ `StructuresOracle.java`) | ✅ `structures_parity` green: 10,533 lines match (all six generators' starts, pieces, boxes; block placement pending) |
 | Loot + enchantment RNG | `crates/mc-worldgen/src/loot.rs` + `tools/test_loot_parity.py` (+ `LootOracle.java`) | ✅ `loot_parity` green: 695 lines match (registry + `buildEnchantmentList` + `generateChestContents`; unblocks chest placement) |
 | Mineshaft block placement | `crates/mc-worldgen/src/structure/placement.rs` + `tools/test_mineshaft_placement_parity.py` (+ `MineshaftPlacementOracle.java`) | ✅ `mineshaft_placement_parity` green: 3,598 lines match (3 seeds x 14 chunks, 426 structure blocks; curated corpus - see `handoff.md`) |
+| Decoration (all layers + per-biome overrides) | `crates/mc-worldgen/src/decorate.rs` + `decorate/blocks.rs` + `decorate/trees.rs` + `tools/test_decoration_parity.py` (+ `DecorationOracle.java`) | ✅ `decoration_parity` green: 32,896 lines match (7 modes x 3 seeds: ores, surface, plants, trees, springs, ore_surface, `full` = real `BiomeGenBase.decorate` incl. double plants/melon/vines/ice/boulders/emerald/monster-egg/desert wells) |
 | Java HashMap order | `crates/mc-core/src/jhash.rs` + `tools/test_jhash_parity.py` (+ `HashOrderOracle.java`) | ✅ `jhash_parity` green: 16 insertion orders / 301 keys match `keySet()` order (unblocks chest-enchantment RNG) |
 | Block table | `oracle/java/src/BlockTableOracle.java` → `chunk::light_opacity` | ✅ dumped from the live game (opacity per block id + material-air set) |
 | Math | `crates/mc-core/src/jmath.rs` + `tools/test_math_parity.py` (+ `MathOracle.java`) | ✅ `math_parity` green: 492 lines match (`MathHelper` sin/cos table + floor/clamp helpers) |

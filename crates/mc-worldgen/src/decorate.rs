@@ -1,22 +1,26 @@
 //! Decoration (the `BiomeDecorator` half of `populate`).
 //!
-//! This is being ported in layers; each layer is parity-gated by `decoration_parity`
-//! (`tools/test_decoration_parity.py`) with a mode. Implemented so far:
+//! This is ported in layers; each layer is parity-gated by `decoration_parity`
+//! (`tools/test_decoration_parity.py`) with a mode. Implemented:
 //!
 //! * `ores` — `BiomeDecorator.generateOres` (`WorldGenMinable` over the ore table).
 //! * `surface` — the `WorldGenSand`/`WorldGenClay`/gravel-as-sand loops.
+//! * `trees` — the `genBigTreeChance` tree loop (`decorate/trees.rs`).
+//! * `plants` — the vegetation section (big mushrooms, flowers, grass, dead bush, waterlily,
+//!   mushrooms, reeds, pumpkin, cactus).
+//! * `springs` — `WorldGenLiquids` + its one-step liquid tick.
+//! * `full` — the real `BiomeGenBase.decorate`, i.e. the layers above plus the per-biome `decorate`
+//!   overrides: plains/forest/savanna/taiga double plants, jungle melon (+ the no-op vines), ice
+//!   spikes/paths, taiga boulders, hills emerald/monster egg, desert wells. Also fixes the plain
+//!   `BiomeGenMutated` biomes, whose `decorate` runs the base biome's decorator.
 //!
-//! Everything else in `BiomeDecorator.genDecorations` (trees, flowers, grass, dead bush, waterlily,
-//! mushrooms, reeds, pumpkin, cactus, springs) and the per-biome `decorate` overrides are pending.
-//!
-//! Ported from the decompiled vanilla `net.minecraft.world.biome.BiomeDecorator`,
-//! `net.minecraft.world.gen.feature.{WorldGenMinable,WorldGenSand,WorldGenClay}` and
-//! `net.minecraft.world.chunk.Chunk`/`net.minecraft.world.World` (the block read/write and height-map
-//! semantics the generators depend on).
+//! Ported from the decompiled vanilla `net.minecraft.world.biome.*` (`BiomeDecorator` + the
+//! `BiomeGen*` overrides), `net.minecraft.world.gen.feature.*` and `net.minecraft.world.chunk.Chunk`
+//! /`net.minecraft.world.World` (the block read/write and height-map semantics the generators use).
 
 use std::collections::BTreeMap;
 
-use mc_core::jmath::{clamp_double, cos, floor_double, sin};
+use mc_core::jmath::{abs_int, ceiling_float_int, clamp_double, cos, floor_double, sin};
 use mc_core::random::JavaRandom;
 
 pub mod blocks;
@@ -24,8 +28,8 @@ pub mod trees;
 
 use crate::noise::Perlin;
 use blocks::{
-    material_blocks_movement, material_is_leaves, material_is_water, CLAY, DIAMOND_ORE, DIRT,
-    GRASS, GRAVEL, SAND, STONE,
+    material_blocks_movement, material_is_leaves, material_is_replaceable, material_is_water, CLAY,
+    DIAMOND_ORE, DIRT, GRASS, GRAVEL, SAND, STONE,
 };
 
 /// `ChunkProviderSettings.Factory` defaults (`func_177863_a`), limited to the fields decoration uses.
@@ -140,6 +144,10 @@ pub struct DecorateOptions {
     pub trees: bool,
     pub plants: bool,
     pub springs: bool,
+    /// The per-biome `decorate` overrides (double plants, melons, vines, ice, boulders, emerald,
+    /// monster egg, desert wells). These wrap `genDecorations` (before/after), so they only run with
+    /// the full layer set; the `full` harness mode enables every flag.
+    pub overrides: bool,
 }
 
 impl DecorateOptions {
@@ -150,6 +158,7 @@ impl DecorateOptions {
             trees: false,
             plants: false,
             springs: false,
+            overrides: false,
         }
     }
 
@@ -160,6 +169,7 @@ impl DecorateOptions {
             trees: true,
             plants: true,
             springs: true,
+            overrides: true,
         }
     }
 }
@@ -503,15 +513,17 @@ impl ChunkState {
     }
 }
 
-/// `BiomeDecorator.decorate` + `genDecorations`, restricted to the implemented layers.
+/// `BiomeDecorator.decorate` (the full `BiomeGenBase.decorate` dispatch) — the base
+/// `genDecorations` layers plus the per-biome `decorate` overrides that wrap them.
 ///
 /// `biome_x`/`biome_z` are the chunk origin (`ChunkProviderGenerate.populate`'s `new BlockPos(x*16,
 /// 0, z*16)`), so features are placed in the `+8`-offset 16x16 window (spanning into the neighbour
 /// chunks), exactly as vanilla does. `biome_id` is the generation biome at that window's centre
 /// (`ChunkProviderGenerate.populate`'s `getBiomeGenForCoords(field.add(16, 0, 16))`), which selects
-/// the plant counts and the flower/grass hooks. `grass_noise` is `BiomeGenBase.GRASS_COLOR_NOISE`
-/// (`Perlin(Random(2345), 1)`), used by the plains/forest flower hooks. `big_mushroom` carries the
-/// shared `WorldGenBigMushroom`'s once-per-biome colour (`mushroomType`), keyed by biome id.
+/// the plant counts, the flower/grass hooks and the override. `grass_noise` is
+/// `BiomeGenBase.GRASS_COLOR_NOISE` (`Perlin(Random(2345), 1)`), used by the plains/forest flower
+/// hooks and the plains override. `big_mushroom` carries the shared `WorldGenBigMushroom`'s
+/// once-per-biome colour (`mushroomType`), keyed by biome id.
 #[allow(clippy::too_many_arguments)]
 pub fn decorate(
     world: &mut DecorateWorld,
@@ -525,6 +537,26 @@ pub fn decorate(
     big_mushroom: &mut BTreeMap<i32, bool>,
     big_tree_height: &mut BTreeMap<i32, i32>,
 ) {
+    // `BiomeGenForest.createMutatedBiome` builds a `BiomeGenMutated` whose `decorate` forwards to
+    // `baseBiome.decorate`; for the roofed-forest mutation (29 + 128) that makes it decoration-
+    // identical to its base, so resolve it through the base id (counts, hooks and override).
+    let biome_id = if biome_id == 157 { 29 } else { biome_id };
+
+    let mut plant_counts = decorate_plants(biome_id);
+    let trees = decorate_trees(biome_id);
+
+    if opts.overrides {
+        biome_override_pre(
+            world,
+            rand,
+            biome_id,
+            biome_x,
+            biome_z,
+            &mut plant_counts,
+            grass_noise,
+            big_tree_height,
+        );
+    }
     if opts.ores {
         generate_ores(world, rand, biome_x, biome_z, settings);
     }
@@ -532,7 +564,15 @@ pub fn decorate(
         surface(world, rand, biome_x, biome_z);
     }
     if opts.trees {
-        trees_loop(world, rand, biome_x, biome_z, biome_id, big_tree_height);
+        trees_loop(
+            world,
+            rand,
+            biome_x,
+            biome_z,
+            biome_id,
+            trees,
+            big_tree_height,
+        );
     }
     if opts.plants {
         plants(
@@ -541,12 +581,56 @@ pub fn decorate(
             biome_x,
             biome_z,
             biome_id,
+            plant_counts,
             grass_noise,
             big_mushroom,
         );
     }
     if opts.springs {
         springs(world, rand, biome_x, biome_z);
+    }
+    if opts.overrides {
+        biome_override_post(world, rand, biome_id, biome_x, biome_z);
+    }
+}
+
+/// The decorator counts the biome's `decorate` actually uses: a plain `BiomeGenMutated` runs the
+/// *base* biome's `theBiomeDecorator` counts while its `pickRandomFlower`/`getRandomWorldGenForGrass`
+/// stay at the `BiomeGenBase` default (they are not overridden by `BiomeGenMutated`).
+fn decorate_plants(biome_id: i32) -> BiomePlants {
+    match mutated_base(biome_id) {
+        Some(base) => {
+            let mut cfg = biome_plants(base);
+            cfg.flower_kind = FlowerKind::Default;
+            cfg.grass_kind = GrassKind::Default;
+            cfg
+        }
+        None => biome_plants(biome_id),
+    }
+}
+
+/// `treesPerChunk` from the decorator the biome's `decorate` uses.
+fn decorate_trees(biome_id: i32) -> i32 {
+    match mutated_base(biome_id) {
+        Some(base) => biome_trees(base),
+        None => biome_trees(biome_id),
+    }
+}
+
+/// The `BiomeGenMutated` biomes whose `decorate` runs `baseBiome.theBiomeDecorator.decorate` (their
+/// own decorator is never read): the mutated id -> base id. `157` is excluded here because it
+/// forwards to `baseBiome.decorate` and is mapped to `29` at the top of `decorate`.
+fn mutated_base(biome_id: i32) -> Option<i32> {
+    match biome_id {
+        130 => Some(2),
+        133 => Some(5),
+        134 => Some(6),
+        149 => Some(21),
+        151 => Some(23),
+        155 => Some(27),
+        156 => Some(28),
+        158 => Some(30),
+        _ => None,
     }
 }
 
@@ -577,9 +661,9 @@ fn trees_loop(
     bx: i32,
     bz: i32,
     biome_id: i32,
+    mut count: i32,
     big_tree_height: &mut BTreeMap<i32, i32>,
 ) {
-    let mut count = biome_trees(biome_id);
     if rand.next_int_bound(10) == 0 {
         count += 1;
     }
@@ -1539,11 +1623,10 @@ fn plants(
     bx: i32,
     bz: i32,
     biome_id: i32,
+    cfg: BiomePlants,
     grass_noise: &mut Perlin,
     big_mushroom: &mut BTreeMap<i32, bool>,
 ) {
-    let cfg = biome_plants(biome_id);
-
     for _ in 0..cfg.big_mushrooms {
         let x = rand.next_int_bound(16) + 8;
         let z = rand.next_int_bound(16) + 8;
@@ -1713,6 +1796,533 @@ fn plants(
     }
 }
 
+// ---- per-biome `decorate` overrides ----
+
+/// `BlockDoublePlant.EnumPlantType`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DoublePlant {
+    Sunflower,
+    Syringa,
+    Grass,
+    Fern,
+    Rose,
+    Paeonia,
+}
+
+impl DoublePlant {
+    fn meta(self) -> u16 {
+        match self {
+            DoublePlant::Sunflower => 0,
+            DoublePlant::Syringa => 1,
+            DoublePlant::Grass => 2,
+            DoublePlant::Fern => 3,
+            DoublePlant::Rose => 4,
+            DoublePlant::Paeonia => 5,
+        }
+    }
+}
+
+/// The `BiomeGen*` `decorate` code that runs *before* `super.decorate` (`genDecorations`). Plains
+/// also mutates the flower/grass counts first.
+#[allow(clippy::too_many_arguments)]
+fn biome_override_pre(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    biome_id: i32,
+    bx: i32,
+    bz: i32,
+    cfg: &mut BiomePlants,
+    grass_noise: &mut Perlin,
+    big_tree_height: &mut BTreeMap<i32, i32>,
+) {
+    match biome_id {
+        1 | 129 => plains_pre(world, rand, biome_id, bx, bz, cfg, grass_noise),
+        4 | 18 | 27 | 28 | 29 | 132 => forest_pre(world, rand, biome_id, bx, bz, big_tree_height),
+        5 | 19 | 30 | 31 | 32 | 33 | 160 | 161 => taiga_pre(world, rand, biome_id, bx, bz),
+        35 | 36 => double_plant_loop(world, rand, bx, bz, 7, DoublePlant::Grass),
+        140 => snow_spikes_pre(world, rand, bx, bz),
+        _ => {}
+    }
+}
+
+/// The `BiomeGen*` `decorate` code that runs *after* `super.decorate` (`genDecorations`).
+fn biome_override_post(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    biome_id: i32,
+    bx: i32,
+    bz: i32,
+) {
+    match biome_id {
+        2 | 17 => desert_post(world, rand, bx, bz),
+        21..=23 => jungle_post(world, rand, bx, bz),
+        3 | 20 | 34 | 131 | 162 => hills_post(world, rand, bx, bz),
+        _ => {}
+    }
+}
+
+/// `BiomeGenPlains.decorate`.
+fn plains_pre(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    biome_id: i32,
+    bx: i32,
+    bz: i32,
+    cfg: &mut BiomePlants,
+    grass_noise: &mut Perlin,
+) {
+    let v = grass_noise.sample_2d((bx as f64 + 8.0) / 200.0, (bz as f64 + 8.0) / 200.0);
+    if v < -0.8 {
+        cfg.flowers = 15;
+        cfg.grass = 5;
+    } else {
+        cfg.flowers = 4;
+        cfg.grass = 10;
+        double_plant_loop(world, rand, bx, bz, 7, DoublePlant::Grass);
+    }
+    if biome_id == 129 {
+        double_plant_loop(world, rand, bx, bz, 10, DoublePlant::Sunflower);
+    }
+}
+
+/// `BiomeGenForest.decorate` (`field_150632_aF` = 0 forest, 1 flower forest, 2 birch, 3 roofed).
+fn forest_pre(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    biome_id: i32,
+    bx: i32,
+    bz: i32,
+    big_tree_height: &mut BTreeMap<i32, i32>,
+) {
+    let kind = match biome_id {
+        132 => 1,
+        27 | 28 => 2,
+        29 => 3,
+        _ => 0,
+    };
+    if kind == 3 {
+        for a in 0..4i32 {
+            for b in 0..4i32 {
+                let x = a * 4 + 1 + 8 + rand.next_int_bound(3);
+                let z = b * 4 + 1 + 8 + rand.next_int_bound(3);
+                let y = world.height(bx + x, bz + z);
+                if rand.next_int_bound(20) == 0 {
+                    let is_brown = rand.next_boolean();
+                    gen_big_mushroom(world, rand, bx + x, y, bz + z, is_brown);
+                } else {
+                    let tree = trees::big_tree_chance(biome_id, rand);
+                    let height_limit = big_tree_height.entry(biome_id).or_insert(0);
+                    if trees::generate(world, rand, bx + x, y, bz + z, tree, height_limit) {
+                        trees::post_generate(world, rand, bx + x, y, bz + z, tree);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut n = rand.next_int_bound(5) - 3;
+    if kind == 1 {
+        n += 2;
+    }
+    for _ in 0..n {
+        let plant = match rand.next_int_bound(3) {
+            0 => DoublePlant::Syringa,
+            1 => DoublePlant::Rose,
+            _ => DoublePlant::Paeonia,
+        };
+        for _ in 0..5 {
+            let x = rand.next_int_bound(16) + 8;
+            let z = rand.next_int_bound(16) + 8;
+            let h = world.height(bx + x, bz + z) + 32;
+            let y = rand.next_int_bound(h);
+            if gen_double_plant(world, rand, bx + x, y, bz + z, plant) {
+                break;
+            }
+        }
+    }
+}
+
+/// `BiomeGenTaiga.decorate` (`field_150644_aH`: 1 mega, 2 mega spruce; both grow boulders + ferns).
+fn taiga_pre(world: &mut DecorateWorld, rand: &mut JavaRandom, biome_id: i32, bx: i32, bz: i32) {
+    let kind = match biome_id {
+        32 | 33 => 1,
+        160 | 161 => 2,
+        _ => 0,
+    };
+    if kind == 1 || kind == 2 {
+        let n = rand.next_int_bound(3);
+        for _ in 0..n {
+            let x = rand.next_int_bound(16) + 8;
+            let z = rand.next_int_bound(16) + 8;
+            let y = world.height(bx + x, bz + z);
+            gen_block_blob(world, rand, bx + x, y, bz + z);
+        }
+    }
+    double_plant_loop(world, rand, bx, bz, 7, DoublePlant::Fern);
+}
+
+/// `BiomeGenSnow.decorate` (`field_150615_aC` = ice-plains-spikes).
+fn snow_spikes_pre(world: &mut DecorateWorld, rand: &mut JavaRandom, bx: i32, bz: i32) {
+    for _ in 0..3 {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let y = world.height(bx + x, bz + z);
+        gen_ice_spike(world, rand, bx + x, y, bz + z);
+    }
+    for _ in 0..2 {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let y = world.height(bx + x, bz + z);
+        gen_ice_path(world, rand, bx + x, y, bz + z);
+    }
+}
+
+/// `BiomeGenDesert.decorate` (the 1/1000 well).
+fn desert_post(world: &mut DecorateWorld, rand: &mut JavaRandom, bx: i32, bz: i32) {
+    if rand.next_int_bound(1000) == 0 {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let y = world.height(bx + x, bz + z) + 1;
+        gen_desert_well(world, bx + x, y, bz + z);
+    }
+}
+
+/// `BiomeGenJungle.decorate` (a melon then 50 `WorldGenVines`).
+fn jungle_post(world: &mut DecorateWorld, rand: &mut JavaRandom, bx: i32, bz: i32) {
+    let x = rand.next_int_bound(16) + 8;
+    let z = rand.next_int_bound(16) + 8;
+    let h = world.height(bx + x, bz + z) * 2;
+    let y = rand.next_int_bound(h);
+    gen_melon(world, rand, bx + x, y, bz + z);
+    for _ in 0..50 {
+        let vx = rand.next_int_bound(16) + 8;
+        let vz = rand.next_int_bound(16) + 8;
+        gen_vines(world, rand, bx + vx, 128, bz + vz);
+    }
+}
+
+/// `BiomeGenHills.decorate` (emerald ore pockets + monster-egg `WorldGenMinable`).
+fn hills_post(world: &mut DecorateWorld, rand: &mut JavaRandom, bx: i32, bz: i32) {
+    let n = 3 + rand.next_int_bound(6);
+    for _ in 0..n {
+        let x = rand.next_int_bound(16);
+        let y = rand.next_int_bound(28) + 4;
+        let z = rand.next_int_bound(16);
+        if world.get_id(bx + x, y, bz + z) == STONE {
+            world.set(bx + x, y, bz + z, (blocks::EMERALD_ORE as u16) << 4);
+        }
+    }
+    for _ in 0..7 {
+        let x = rand.next_int_bound(16);
+        let y = rand.next_int_bound(64);
+        let z = rand.next_int_bound(16);
+        gen_minable(
+            world,
+            rand,
+            bx + x,
+            y,
+            bz + z,
+            (blocks::MONSTER_EGG as u16) << 4,
+            9,
+        );
+    }
+}
+
+/// The `DOUBLE_PLANT_GENERATOR` loop over the `+8` window used by the plains/taiga/savanna
+/// overrides (the `getHeight + 32` bound).
+fn double_plant_loop(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    bx: i32,
+    bz: i32,
+    n: i32,
+    plant: DoublePlant,
+) {
+    for _ in 0..n {
+        let x = rand.next_int_bound(16) + 8;
+        let z = rand.next_int_bound(16) + 8;
+        let h = world.height(bx + x, bz + z) + 32;
+        let y = rand.next_int_bound(h);
+        gen_double_plant(world, rand, bx + x, y, bz + z, plant);
+    }
+}
+
+/// `WorldGenDoublePlant.generate` (returns whether it placed at least one plant).
+fn gen_double_plant(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    x: i32,
+    y: i32,
+    z: i32,
+    plant: DoublePlant,
+) -> bool {
+    let mut placed = false;
+    for _ in 0..64 {
+        let px = x + rand.next_int_bound(8) - rand.next_int_bound(8);
+        let py = y + rand.next_int_bound(4) - rand.next_int_bound(4);
+        let pz = z + rand.next_int_bound(8) - rand.next_int_bound(8);
+        // The overworld provider's `getHasNoSky()` is false, so the `!getHasNoSky() || y < 254`
+        // guard in vanilla is always true here.
+        if world.is_air(px, py, pz)
+            && world.is_air(px, py + 1, pz)
+            && bush_soil(world.get_id(px, py - 1, pz))
+        {
+            double_plant_place(world, px, py, pz, plant);
+            placed = true;
+        }
+    }
+    placed
+}
+
+/// `BlockDoublePlant.placeAt`: lower half (the variant metadata) then upper half. The upper half's
+/// `getMetaFromState` is `8 | FACING.getHorizontalIndex()` with `FACING` at its default `NORTH`
+/// (horizontal index 2).
+fn double_plant_place(world: &mut DecorateWorld, x: i32, y: i32, z: i32, plant: DoublePlant) {
+    let id = (blocks::DOUBLE_PLANT as u16) << 4;
+    world.set(x, y, z, id | plant.meta());
+    world.set(x, y + 1, z, id | (8 | 2));
+}
+
+/// `WorldGenMelon.generate`.
+fn gen_melon(world: &mut DecorateWorld, rand: &mut JavaRandom, x: i32, y: i32, z: i32) {
+    for _ in 0..64 {
+        let px = x + rand.next_int_bound(8) - rand.next_int_bound(8);
+        let py = y + rand.next_int_bound(4) - rand.next_int_bound(4);
+        let pz = z + rand.next_int_bound(8) - rand.next_int_bound(8);
+        if material_is_replaceable(world.get_id(px, py, pz))
+            && world.get_id(px, py - 1, pz) == GRASS
+        {
+            world.set(px, py, pz, (blocks::MELON as u16) << 4);
+        }
+    }
+}
+
+/// `WorldGenVines.generate`. The jungle override starts it at `y = 128`, so the `y < 128` loop never
+/// runs (a vanilla 1.8.9 quirk); kept faithful for reuse.
+fn gen_vines(world: &mut DecorateWorld, rand: &mut JavaRandom, mut x: i32, mut y: i32, mut z: i32) {
+    while y < 128 {
+        if world.is_air(x, y, z) {
+            // `EnumFacing.Plane.HORIZONTAL.facings()` = {NORTH, EAST, SOUTH, WEST}; the support
+            // block is at `pos.offset(facing.getOpposite())`, and the placed vine gets that face.
+            for (dx, dz, bit) in [(0, -1, 4u16), (1, 0, 8), (0, 1, 1), (-1, 0, 2)] {
+                let support = world.get_id(x - dx, y, z - dz);
+                if blocks::is_full_block(support) && material_blocks_movement(support) {
+                    world.set(x, y, z, ((blocks::VINE as u16) << 4) | bit);
+                    break;
+                }
+            }
+        } else {
+            x += rand.next_int_bound(4) - rand.next_int_bound(4);
+            z += rand.next_int_bound(4) - rand.next_int_bound(4);
+        }
+        y += 1;
+    }
+}
+
+/// `Block` material `air`/`dirt`/`snow`/`ice` (the ice generators' replaceable set).
+#[inline]
+fn ice_replaceable(id: i32) -> bool {
+    id == 0 || id == blocks::DIRT || id == blocks::SNOW || id == blocks::ICE
+}
+
+/// `WorldGenIceSpike.generate`.
+fn gen_ice_spike(world: &mut DecorateWorld, rand: &mut JavaRandom, x: i32, mut y: i32, z: i32) {
+    while world.is_air(x, y, z) && y > 2 {
+        y -= 1;
+    }
+    if world.get_id(x, y, z) != blocks::SNOW {
+        return;
+    }
+    y += rand.next_int_bound(4);
+    let height = rand.next_int_bound(4) + 7;
+    let radius = height / 4 + rand.next_int_bound(2);
+    if radius > 1 && rand.next_int_bound(60) == 0 {
+        y += 10 + rand.next_int_bound(30);
+    }
+
+    for i in 0..height {
+        let size = (1.0 - i as f32 / height as f32) * radius as f32;
+        let r = ceiling_float_int(size);
+        for dx in -r..=r {
+            let ex = abs_int(dx) as f32 - 0.25;
+            for dz in -r..=r {
+                let ez = abs_int(dz) as f32 - 0.25;
+                let inner = (dx == 0 && dz == 0) || ex * ex + ez * ez <= size * size;
+                // Java short-circuits the `&&`: the `nextFloat` draw only happens when `inner`.
+                if inner
+                    && ((dx != -r && dx != r && dz != -r && dz != r) || rand.next_float() <= 0.75)
+                {
+                    let yy = y + i;
+                    if ice_replaceable(world.get_id(x + dx, yy, z + dz)) {
+                        world.set(x + dx, yy, z + dz, (blocks::PACKED_ICE as u16) << 4);
+                    }
+                    if i != 0 && r > 1 {
+                        let by = y - i;
+                        if ice_replaceable(world.get_id(x + dx, by, z + dz)) {
+                            world.set(x + dx, by, z + dz, (blocks::PACKED_ICE as u16) << 4);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let base_r = (radius - 1).clamp(0, 1);
+    for dx in -base_r..=base_r {
+        for dz in -base_r..=base_r {
+            let mut py = y - 1;
+            let mut budget = 50;
+            if abs_int(dx) == 1 && abs_int(dz) == 1 {
+                budget = rand.next_int_bound(5);
+            }
+            while py > 50 {
+                let id = world.get_id(x + dx, py, z + dz);
+                if id != 0
+                    && id != blocks::DIRT
+                    && id != blocks::SNOW
+                    && id != blocks::ICE
+                    && id != blocks::PACKED_ICE
+                {
+                    break;
+                }
+                world.set(x + dx, py, z + dz, (blocks::PACKED_ICE as u16) << 4);
+                py -= 1;
+                budget -= 1;
+                if budget <= 0 {
+                    py -= rand.next_int_bound(5) + 1;
+                    budget = rand.next_int_bound(5);
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGenIcePath.generate` (`WorldGenIcePath(4)`).
+fn gen_ice_path(world: &mut DecorateWorld, rand: &mut JavaRandom, x: i32, mut y: i32, z: i32) {
+    while world.is_air(x, y, z) && y > 2 {
+        y -= 1;
+    }
+    if world.get_id(x, y, z) != blocks::SNOW {
+        return;
+    }
+    let r = rand.next_int_bound(4 - 2) + 2;
+    for px in (x - r)..=(x + r) {
+        for pz in (z - r)..=(z + r) {
+            let dx = px - x;
+            let dz = pz - z;
+            if dx * dx + dz * dz <= r * r {
+                for py in (y - 1)..=(y + 1) {
+                    let id = world.get_id(px, py, pz);
+                    if id == blocks::DIRT || id == blocks::SNOW || id == blocks::ICE {
+                        world.set(px, py, pz, (blocks::PACKED_ICE as u16) << 4);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGenBlockBlob.generate` (`new WorldGenBlockBlob(Blocks.mossy_cobblestone, 0)`).
+fn gen_block_blob(
+    world: &mut DecorateWorld,
+    rand: &mut JavaRandom,
+    mut x: i32,
+    mut y: i32,
+    mut z: i32,
+) {
+    while y > 3 {
+        if !world.is_air(x, y - 1, z) {
+            let b = world.get_id(x, y - 1, z);
+            if b == blocks::GRASS || b == blocks::DIRT || b == blocks::STONE {
+                break;
+            }
+        }
+        y -= 1;
+    }
+    if y <= 3 {
+        return;
+    }
+    let size = 0; // `WorldGenBlockBlob.field_150544_b`
+    for _ in 0..3 {
+        let rx = size + rand.next_int_bound(2);
+        let ry = size + rand.next_int_bound(2);
+        let rz = size + rand.next_int_bound(2);
+        let limit = (rx + ry + rz) as f32 * 0.333f32 + 0.5f32;
+        for px in (x - rx)..=(x + rx) {
+            for py in (y - ry)..=(y + ry) {
+                for pz in (z - rz)..=(z + rz) {
+                    let dx = (px - x) as f64;
+                    let dy = (py - y) as f64;
+                    let dz = (pz - z) as f64;
+                    if dx * dx + dy * dy + dz * dz <= (limit * limit) as f64 {
+                        world.set(px, py, pz, (blocks::MOSSY_COBBLESTONE as u16) << 4);
+                    }
+                }
+            }
+        }
+        x += -(size + 1) + rand.next_int_bound(2 + size * 2);
+        y += -rand.next_int_bound(2);
+        z += -(size + 1) + rand.next_int_bound(2 + size * 2);
+    }
+}
+
+/// `WorldGenDesertWells.generate`.
+fn gen_desert_well(world: &mut DecorateWorld, x: i32, mut y: i32, z: i32) {
+    while world.is_air(x, y, z) && y > 2 {
+        y -= 1;
+    }
+    if world.get_id(x, y, z) != blocks::SAND || (world.get(x, y, z) & 15) != 0 {
+        return;
+    }
+    for dx in -2..=2 {
+        for dz in -2..=2 {
+            if world.is_air(x + dx, y - 1, z + dz) && world.is_air(x + dx, y - 2, z + dz) {
+                return;
+            }
+        }
+    }
+    let sandstone = (blocks::SANDSTONE as u16) << 4;
+    let slab = ((blocks::STONE_SLAB as u16) << 4) | 1; // variant SAND, HALF BOTTOM
+    for dy in -1..=0 {
+        for dx in -2..=2 {
+            for dz in -2..=2 {
+                world.set(x + dx, y + dy, z + dz, sandstone);
+            }
+        }
+    }
+    let water = (blocks::FLOWING_WATER as u16) << 4;
+    world.set(x, y, z, water);
+    for (dx, dz) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
+        world.set(x + dx, y, z + dz, water);
+    }
+    for dx in -2..=2 {
+        for dz in -2..=2 {
+            if dx == -2 || dx == 2 || dz == -2 || dz == 2 {
+                world.set(x + dx, y + 1, z + dz, sandstone);
+            }
+        }
+    }
+    world.set(x + 2, y + 1, z, slab);
+    world.set(x - 2, y + 1, z, slab);
+    world.set(x, y + 1, z + 2, slab);
+    world.set(x, y + 1, z - 2, slab);
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            if dx == 0 && dz == 0 {
+                world.set(x, y + 4, z, sandstone);
+            } else {
+                world.set(x + dx, y + 4, z + dz, slab);
+            }
+        }
+    }
+    for dy in 1..=3 {
+        world.set(x - 1, y + dy, z - 1, sandstone);
+        world.set(x - 1, y + dy, z + 1, sandstone);
+        world.set(x + 1, y + dy, z - 1, sandstone);
+        world.set(x + 1, y + dy, z + 1, sandstone);
+    }
+}
+
 // ---- springs (`WorldGenLiquids`) ----
 
 /// `BiomeDecorator.genDecorations`' springs section (`generateLakes`).
@@ -1864,6 +2474,21 @@ mod tests {
         world
     }
 
+    /// A flat world filled with one block (`id << 4 | meta`) up to y=63 and air above.
+    fn flat_world(block: u16) -> DecorateWorld {
+        let mut world = DecorateWorld::new(63);
+        let mut blocks = vec![0u16; 65536];
+        for x in 0..16 {
+            for z in 0..16 {
+                for y in 0..64 {
+                    blocks[chunk_index(x, y, z)] = block;
+                }
+            }
+        }
+        world.insert_chunk(0, 0, blocks);
+        world
+    }
+
     /// `WorldGenMinable` replaces stone with the ore (and nothing else) within its ellipsoid.
     #[test]
     fn minable_replaces_only_stone() {
@@ -1999,5 +2624,86 @@ mod tests {
             world.get(8, 20, 9),
             ((blocks::FLOWING_WATER as u16) << 4) | 1
         );
+    }
+
+    /// A plain `BiomeGenMutated` runs the *base* biome's decorator counts but keeps the
+    /// `BiomeGenBase` default flower/grass hooks (`BiomeGenMutated` does not override them).
+    #[test]
+    fn mutated_biomes_use_base_counts_and_default_hooks() {
+        assert_eq!(decorate_trees(133), biome_trees(5)); // taiga M
+        assert_eq!(decorate_trees(130), -999); // desert M
+        let base = biome_plants(5);
+        let m = decorate_plants(133);
+        assert_eq!(m.grass, base.grass);
+        assert_eq!(m.mushrooms, base.mushrooms);
+        assert_eq!(m.flower_kind, FlowerKind::Default);
+        assert_eq!(m.grass_kind, GrassKind::Default);
+        assert_eq!(decorate_plants(130).reeds, 50); // desert's reedsPerChunk
+    }
+
+    /// `BlockDoublePlant.placeAt`: lower half carries the variant meta, upper half is
+    /// `8 | FACING.getHorizontalIndex()` with the default `FACING = NORTH` (horizontal index 2).
+    #[test]
+    fn double_plant_writes_variant_lower_and_facing_upper_half() {
+        let mut world = flat_world((blocks::GRASS as u16) << 4);
+        double_plant_place(&mut world, 8, 64, 8, DoublePlant::Fern);
+        assert_eq!(
+            world.get(8, 64, 8),
+            ((blocks::DOUBLE_PLANT as u16) << 4) | 3
+        );
+        assert_eq!(
+            world.get(8, 65, 8),
+            ((blocks::DOUBLE_PLANT as u16) << 4) | (8 | 2)
+        );
+    }
+
+    /// `WorldGenDesertWells`: a flowing-water centre, a sandstone ring, sand slabs at the four
+    /// rim posts and an inner ring of slabs around a sandstone centre at `y + 4`.
+    #[test]
+    fn desert_well_builds_the_vanilla_layout() {
+        let mut world = flat_world((blocks::SAND as u16) << 4);
+        gen_desert_well(&mut world, 8, 64, 8);
+        let water = (blocks::FLOWING_WATER as u16) << 4;
+        let sandstone = (blocks::SANDSTONE as u16) << 4;
+        let slab = ((blocks::STONE_SLAB as u16) << 4) | 1; // variant SAND, HALF BOTTOM
+
+        assert_eq!(world.get(8, 63, 8), water);
+        assert_eq!(world.get(6, 64, 8), slab);
+        assert_eq!(world.get(10, 64, 8), slab);
+        assert_eq!(world.get(8, 64, 10), slab);
+        assert_eq!(world.get(8, 64, 6), slab);
+        assert_eq!(world.get(6, 64, 6), sandstone); // rim corner
+        assert_eq!(world.get(8, 67, 8), sandstone); // y+4 centre
+        assert_eq!(world.get(7, 67, 7), slab); // y+4 inner ring
+        assert_eq!(world.get(7, 64, 7), sandstone); // pillar
+    }
+
+    /// `WorldGenIcePath(4)` replaces the snow surface with packed ice.
+    #[test]
+    fn ice_path_replaces_snow_with_packed_ice() {
+        let mut world = flat_world((blocks::SNOW as u16) << 4);
+        let mut rand = JavaRandom::new(1);
+        gen_ice_path(&mut world, &mut rand, 8, 64, 8);
+        assert_eq!(world.get(8, 63, 8), (blocks::PACKED_ICE as u16) << 4);
+        assert_eq!(world.get(8, 64, 8), 0); // the air above is not replaced
+    }
+
+    /// `WorldGenBlockBlob` places mossy cobblestone around the surface position.
+    #[test]
+    fn block_blob_places_mossy_cobblestone() {
+        let mut world = flat_world((blocks::GRASS as u16) << 4);
+        let mut rand = JavaRandom::new(1);
+        gen_block_blob(&mut world, &mut rand, 8, 64, 8);
+        let mut found = 0;
+        for y in 60..66 {
+            for x in 4..13 {
+                for z in 4..13 {
+                    if world.get_id(x, y, z) == blocks::MOSSY_COBBLESTONE {
+                        found += 1;
+                    }
+                }
+            }
+        }
+        assert!(found > 0, "expected at least one mossy cobblestone");
     }
 }
