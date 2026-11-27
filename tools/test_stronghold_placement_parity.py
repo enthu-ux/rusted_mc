@@ -32,13 +32,14 @@ import pathlib
 import subprocess
 import sys
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "StrongholdPlacementOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "stronghold"
 ORACLE = Oracle("stronghold", ORACLE_SRC, "StrongholdPlacementOracle", work=WORK, jar=SERVER_JAR)
+PROBE = Probe("stronghold", "mc-worldgen", "stronghold_probe")
 
 # The 3 ring positions per seed (the origin chunk reports its own stronghold).
 CORPUS = [
@@ -142,14 +143,11 @@ def main() -> int:
         if not independent:
             print(f"note: seed {seed} chunks {chunks}: order-dependent (port uses its fixed pass order)")
 
-        r = run(
-            [find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "stronghold_probe", "--",
-             seed] + chunk_args(chunks)
-        )
-        if r.returncode != 0:
-            print("cargo probe failed:\n" + r.stdout + r.stderr)
+        try:
+            rust = PROBE.run([seed] + chunk_args(chunks))
+        except RuntimeError as e:
+            print(e)
             return 2
-        rust = r.stdout
 
         (WORK / f"vanilla-{seed}.txt").write_text(vanilla, encoding="utf-8")
         (WORK / f"rust-{seed}.txt").write_text(rust, encoding="utf-8")

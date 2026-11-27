@@ -14,13 +14,14 @@ import pathlib
 import subprocess
 import sys
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "TerrainOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "terrain"
 ORACLE = Oracle("terrain", ORACLE_SRC, "TerrainOracle", work=WORK, jar=SERVER_JAR)
+PROBE = Probe("terrain", "mc-worldgen", "terrain_probe")
 SEEDS = ["0", "12345", "-7"]
 
 
@@ -54,11 +55,11 @@ def main() -> int:
             return 2
     vanilla = "".join(vanilla_parts)
 
-    r = run([find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "terrain_probe"])
-    if r.returncode != 0:
-        print("cargo probe failed:\n" + r.stdout + r.stderr)
+    try:
+        rust = PROBE.run([])
+    except RuntimeError as e:
+        print(e)
         return 2
-    rust = r.stdout
 
     (WORK / "vanilla.txt").write_text(vanilla, encoding="utf-8")
     (WORK / "rust.txt").write_text(rust, encoding="utf-8")

@@ -31,13 +31,14 @@ import pathlib
 import subprocess
 import sys
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "VillagePlacementOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "village"
 ORACLE = Oracle("village", ORACLE_SRC, "VillagePlacementOracle", work=WORK, jar=SERVER_JAR)
+PROBE = Probe("village", "mc-worldgen", "village_probe")
 
 # Village origins (their own chunk reports the start). Each entry: (seed, chunks, order_independent).
 CORPUS = [
@@ -146,14 +147,11 @@ def main() -> int:
         if not independent:
             print(f"note: seed {seed} chunk {chunks}: order-dependent (port uses its fixed pass order)")
 
-        r = run(
-            [find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "village_probe", "--",
-             seed] + chunk_args(chunks)
-        )
-        if r.returncode != 0:
-            print("cargo probe failed:\n" + r.stdout + r.stderr)
+        try:
+            rust = PROBE.run([seed] + chunk_args(chunks))
+        except RuntimeError as e:
+            print(e)
             return 2
-        rust = r.stdout
 
         (WORK / f"vanilla-{seed}-{chunks[0][0]}_{chunks[0][1]}.txt").write_text(
             vanilla, encoding="utf-8"

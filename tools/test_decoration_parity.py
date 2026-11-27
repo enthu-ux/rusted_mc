@@ -31,13 +31,14 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "DecorationOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "decoration"
 ORACLE = Oracle("decoration", ORACLE_SRC, "DecorationOracle", work=WORK, jar=SERVER_JAR)
+PROBE = Probe("decoration", "mc-worldgen", "decoration_probe")
 
 SEEDS = ["0", "12345", "-7"]
 CHUNKS = [(0, 0), (100, -50), (-37, 210), (-3, 0), (-48, -48), (6, 5)]
@@ -111,13 +112,7 @@ def oracle(seed: str, mode: str, chunks: list[tuple[int, int]]) -> str:
 
 
 def rust(seed: str, mode: str, chunks: list[tuple[int, int]]) -> str:
-    r = run(
-        [find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "decoration_probe", "--",
-         seed, mode] + chunk_args(chunks)
-    )
-    if r.returncode != 0:
-        raise RuntimeError("cargo probe failed:\n" + r.stdout + r.stderr)
-    return r.stdout
+    return PROBE.run([seed, mode] + chunk_args(chunks))
 
 
 def first_mismatch(vanilla: str, rust_out: str) -> str | None:

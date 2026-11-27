@@ -31,7 +31,7 @@ commit/push.
 - **Next increment:** the remaining `populate` pieces the Gate-C chunk still needs (water/lava lakes,
   dungeons, the freeze/snow pass; see below), then the full Gate-C chunk. **All six structures now
   have both layout and block placement parity.**
-- **Baseline:** `scripts/verify.ps1` -> **18/18** harnesses, **135** unit tests, fmt clean (~40 s
+- **Baseline:** `scripts/verify.ps1` -> **18/18** harnesses, **135** unit tests, fmt clean (~7 s
   warm, ~5 min cold with `-Fresh`).
 
 ---
@@ -64,9 +64,10 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-The runner caches each Java oracle's stdout under `.local/<harness>/oracle-cache/` (keyed on the
-oracle source, server jar, argv and env) and runs the harnesses in a bounded pool (`min(4, cores)`
-by default). A warm run (Rust-only changes) is ~40 s; a cold run is ~5 min. Use `-Fresh` after an
+The runner caches both halves of each harness under `.local/<harness>/` - the Java oracle stdout
+(keyed on source/jar/argv/env) and the Rust probe stdout (keyed on the example binary/argv/env,
+rebuilt before hashing) - and runs the harnesses in a bounded pool (`min(4, cores)` by default).
+A warm run (no Rust or oracle changes) is ~7 s; a cold run is ~5 min. Use `-Fresh` after an
 oracle/jar/fixture change (or in CI), and `-Jobs N` to cap workers:
 
 ```sh
@@ -1074,3 +1075,11 @@ heightmap) can match. P0's remaining items still need a running binary.
   -> warm cache hit **38 s** (`verify.ps1` 39 s); focused `py tools/parity.py decoration` **14 s**.
   All **18/18** green, 135 tests unchanged. **Next:** unchanged (lake/dungeon/freeze-snow `populate`
   stages, then the Gate-C chunk).
+- **2026-11-27 - session 31b (verify tooling: probe-output cache).** Extended
+  `tools/_parity_cache.py` with `Probe`: each Rust example's stdout is cached by
+  `(binary identity, argv, env)`. The example is rebuilt before hashing (one workspace build under
+  `parity.py`, per-example otherwise), so a Rust edit changes the binary identity and invalidates
+  the cache instead of returning a stale chunk; `-Fresh` bypasses both caches. All 18 harnesses
+  route probes through `Probe`. Full warm `verify.ps1`: **6.6 s** (suite itself 2.6 s; from 38 s
+  after the oracle cache, 610 s originally). Cold is unchanged (~293 s, Java-bound). 18/18 green,
+  135 tests. **Next:** unchanged.

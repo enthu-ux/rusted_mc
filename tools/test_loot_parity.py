@@ -26,13 +26,14 @@ import pathlib
 import subprocess
 import sys
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "LootOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "loot"
 ORACLE = Oracle("loot", ORACLE_SRC, "LootOracle", work=WORK, jar=SERVER_JAR)
+PROBE = Probe("loot", "mc-worldgen", "loot_probe")
 
 SEEDS = ["0", "12345", "-7"]
 LEVELS = ["0", "5", "15", "30", "50"]
@@ -64,10 +65,10 @@ def one(mode: str, args: list[str]) -> tuple[str, str]:
     except RuntimeError as e:
         raise RuntimeError(f"java oracle failed ({mode}):\n{e}")
 
-    r = run([find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "loot_probe", "--", mode] + args)
-    if r.returncode != 0:
-        raise RuntimeError(f"cargo probe failed ({mode}):\n" + r.stdout + r.stderr)
-    rust = r.stdout
+    try:
+        rust = PROBE.run([mode] + args)
+    except RuntimeError as e:
+        raise RuntimeError(f"cargo probe failed ({mode}):\n{e}")
 
     (WORK / f"vanilla-{mode}.txt").write_text(vanilla, encoding="utf-8")
     (WORK / f"rust-{mode}.txt").write_text(rust, encoding="utf-8")

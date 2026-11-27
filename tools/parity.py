@@ -114,7 +114,9 @@ def main(argv: list[str]) -> int:
     os.environ.setdefault("PARITY_INNER_JOBS", str(min(4, os.cpu_count() or 1) if jobs == 1 else 1))
 
     print(f"== building examples once ==", flush=True)
-    if not build_examples():
+    if build_examples():
+        os.environ["PARITY_PREBUILT"] = "1"
+    else:
         print("warning: example prebuild failed; harnesses will build on demand", flush=True)
 
     print(f"== running {len(tests)} harness(es), {jobs} worker(s) ==", flush=True)

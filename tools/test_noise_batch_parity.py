@@ -15,13 +15,14 @@ import pathlib
 import subprocess
 import sys
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "NoiseBatchOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "noise_batch"
 ORACLE = Oracle("noise_batch", ORACLE_SRC, "NoiseBatchOracle", work=WORK, jar=SERVER_JAR)
+PROBE = Probe("noise_batch", "mc-worldgen", "noise_batch_probe")
 
 
 def find_cargo() -> str:
@@ -51,11 +52,11 @@ def main() -> int:
         print(e)
         return 2
 
-    r = run([find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "noise_batch_probe"])
-    if r.returncode != 0:
-        print("cargo probe failed:\n" + r.stdout + r.stderr)
+    try:
+        rust = PROBE.run([])
+    except RuntimeError as e:
+        print(e)
         return 2
-    rust = r.stdout
 
     (WORK / "vanilla.txt").write_text(vanilla, encoding="utf-8")
     (WORK / "rust.txt").write_text(rust, encoding="utf-8")

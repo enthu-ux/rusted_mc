@@ -48,9 +48,10 @@ cargo fmt --all -- --check
 py tools/parity.py
 ```
 
-`scripts/verify.ps1` caches the Java oracle output (`tools/_parity_cache.py`) and runs harnesses in a
-bounded pool. Use `-Fresh` after changing an oracle, the server jar or a fixture; `-Jobs N` caps
-workers. `py tools/parity.py` is cached too (`--fresh` to bypass).
+`scripts/verify.ps1` caches both the Java oracle and the Rust probe output (`tools/_parity_cache.py`)
+and runs harnesses in a bounded pool. Use `-Fresh` after changing an oracle, the server jar or a
+fixture (`-Jobs N` caps workers). A Rust edit invalidates the probe cache automatically (binary
+identity); `py tools/parity.py` is cached too (`--fresh` to bypass).
 
 See `vendor/tools/NOTES.md` for the Windows toolchain (GNU + w64devkit) and `handoff.md` for
 currently green harnesses and next steps.

@@ -31,13 +31,14 @@ import pathlib
 import subprocess
 import sys
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "MineshaftPlacementOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "mineshaft"
 ORACLE = Oracle("mineshaft", ORACLE_SRC, "MineshaftPlacementOracle", work=WORK, jar=SERVER_JAR)
+PROBE = Probe("mineshaft", "mc-worldgen", "mineshaft_probe")
 
 # Single-start-per-box, order-independent fixtures (see the docstring). Mineshaft origins and
 # chunks inside a shaft, across three seeds.
@@ -134,14 +135,11 @@ def main() -> int:
             print(f"FIXTURE ERROR: seed {seed}: the corpus is order-dependent (forward vs reverse)")
             return 1
 
-        r = run(
-            [find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "mineshaft_probe", "--",
-             seed] + chunk_args(chunks)
-        )
-        if r.returncode != 0:
-            print("cargo probe failed:\n" + r.stdout + r.stderr)
+        try:
+            rust = PROBE.run([seed] + chunk_args(chunks))
+        except RuntimeError as e:
+            print(e)
             return 2
-        rust = r.stdout
 
         (WORK / f"vanilla-{seed}.txt").write_text(vanilla, encoding="utf-8")
         (WORK / f"rust-{seed}.txt").write_text(rust, encoding="utf-8")

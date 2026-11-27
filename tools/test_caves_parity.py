@@ -25,13 +25,14 @@ import pathlib
 import subprocess
 import sys
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "CaveOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "caves"
 ORACLE = Oracle("caves", ORACLE_SRC, "CaveOracle", work=WORK, jar=SERVER_JAR)
+PROBE = Probe("caves", "mc-worldgen", "cave_probe")
 
 SEEDS = ["0", "12345", "-7"]
 MODES = [0, 1, 2, 3]
@@ -134,14 +135,11 @@ def main() -> int:
 
         vanilla = "".join(vanilla_by_mode[m] for m in MODES)
 
-        r = run(
-            [find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "cave_probe", "--",
-             seed, modes] + chunk_args()
-        )
-        if r.returncode != 0:
-            print("cargo probe failed:\n" + r.stdout + r.stderr)
+        try:
+            rust = PROBE.run([seed, modes] + chunk_args())
+        except RuntimeError as e:
+            print(e)
             return 2
-        rust = r.stdout
 
         (WORK / f"vanilla-{seed}.txt").write_text(vanilla, encoding="utf-8")
         (WORK / f"rust-{seed}.txt").write_text(rust, encoding="utf-8")

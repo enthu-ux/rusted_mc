@@ -27,13 +27,14 @@ import pathlib
 import subprocess
 import sys
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "WorldgenOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "worldgen"
 ORACLE = Oracle("worldgen", ORACLE_SRC, "WorldgenOracle", work=WORK, jar=SERVER_JAR)
+PROBE = Probe("worldgen", "mc-worldgen", "worldgen_probe")
 
 SEEDS = ["0", "12345", "-7"]
 # Gate-C chunks first, then fixtures with cave/ravine/mesa/ocean signal.
@@ -165,14 +166,11 @@ def main() -> int:
             print("FIXTURE ERROR: " + problem)
             return 1
 
-        r = run(
-            [find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "worldgen_probe", "--",
-             seed] + chunk_args()
-        )
-        if r.returncode != 0:
-            print("cargo probe failed:\n" + r.stdout + r.stderr)
+        try:
+            rust = PROBE.run([seed] + chunk_args())
+        except RuntimeError as e:
+            print(e)
             return 2
-        rust = r.stdout
 
         (WORK / f"vanilla-{seed}.txt").write_text(vanilla, encoding="utf-8")
         (WORK / f"rust-{seed}.txt").write_text(rust, encoding="utf-8")

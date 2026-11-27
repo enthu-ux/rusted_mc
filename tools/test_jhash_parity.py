@@ -20,12 +20,13 @@ import pathlib
 import subprocess
 import sys
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "HashOrderOracle.java"
 WORK = ROOT / ".local" / "jhash"
 ORACLE = Oracle("jhash", ORACLE_SRC, "HashOrderOracle", work=WORK)
+PROBE = Probe("jhash", "mc-core", "jhash_probe")
 
 
 def find_cargo() -> str:
@@ -94,11 +95,11 @@ def main() -> int:
             print(e)
             return 2
 
-        r = run([find_cargo(), "run", "-q", "-p", "mc-core", "--example", "jhash_probe", "--"] + args)
-        if r.returncode != 0:
-            print("cargo probe failed:\n" + r.stdout + r.stderr)
+        try:
+            rust = PROBE.run(args).strip()
+        except RuntimeError as e:
+            print(e)
             return 2
-        rust = r.stdout.strip()
 
         if not vanilla and len(args) > 1:
             print(f"FIXTURE ERROR: empty oracle output for {args[:3]}...")

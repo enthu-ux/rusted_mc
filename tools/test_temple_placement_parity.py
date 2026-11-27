@@ -37,13 +37,14 @@ import pathlib
 import subprocess
 import sys
 
-from _parity_cache import Oracle
+from _parity_cache import Oracle, Probe
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "TemplePlacementOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "temple"
 ORACLE = Oracle("temple", ORACLE_SRC, "TemplePlacementOracle", work=WORK, jar=SERVER_JAR)
+PROBE = Probe("temple", "mc-worldgen", "temple_probe")
 
 # Temple origins (their own chunk): swamp hut seed 0 (3,47), seed 12345 (-26,49); desert pyramid
 # seed -7 (4,2); jungle pyramid seed 12345 (72,-155). Each entry: (seed, chunks, order_independent).
@@ -149,14 +150,11 @@ def main() -> int:
             print(f"FIXTURE ERROR: seed {seed}: the corpus is order-dependent (forward vs reverse)")
             return 1
 
-        r = run(
-            [find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "temple_probe", "--",
-             seed] + chunk_args(chunks)
-        )
-        if r.returncode != 0:
-            print("cargo probe failed:\n" + r.stdout + r.stderr)
+        try:
+            rust = PROBE.run([seed] + chunk_args(chunks))
+        except RuntimeError as e:
+            print(e)
             return 2
-        rust = r.stdout
 
         (WORK / f"vanilla-{seed}-{chunks[0][0]}_{chunks[0][1]}.txt").write_text(
             vanilla, encoding="utf-8"
