@@ -85,6 +85,41 @@ def parse_args(args: list[str]) -> tuple[int, list[str], bool] | None:
     return jobs, names, fresh
 
 
+def run_batch(tests: list[pathlib.Path], jobs: int) -> dict[str, tuple[int, str, float]]:
+    """Run a batch, printing each harness's output; returns name -> (code, output, seconds)."""
+    results: dict[str, tuple[int, str, float]] = {}
+    if jobs == 1:
+        for t in tests:
+            print(f"===== {t.name} =====", flush=True)
+            _, code, out, elapsed = run_one(t)
+            sys.stdout.write(out)
+            sys.stdout.flush()
+            results[t.name] = (code, out, elapsed)
+            status = "ok" if code == 0 else f"FAILED (exit {code})"
+            print(f"----- {t.name} {status} ({elapsed:.1f}s) -----", flush=True)
+    else:
+        progress_lock = threading.Lock()
+
+        def done(fut: concurrent.futures.Future) -> None:
+            test, code, out, elapsed = fut.result()
+            results[test.name] = (code, out, elapsed)
+            with progress_lock:
+                status = "OK" if code == 0 else f"FAILED (exit {code})"
+                print(f"  {test.name:<40} {status:<18} {elapsed:6.1f}s", flush=True)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = [pool.submit(run_one, t) for t in tests]
+            for fut in concurrent.futures.as_completed(futures):
+                done(fut)
+
+        for t in tests:
+            code, out, elapsed = results[t.name]
+            print(f"===== {t.name} =====", flush=True)
+            sys.stdout.write(out)
+            sys.stdout.flush()
+    return results
+
+
 def main(argv: list[str]) -> int:
     args = argv[1:]
     if "--list" in args:
@@ -110,8 +145,6 @@ def main(argv: list[str]) -> int:
     if jobs <= 0:
         jobs = min(4, os.cpu_count() or 1)
     jobs = max(1, min(jobs, len(tests)))
-    # Decoration can fan its (seed, mode) pairs out, but only when no other harness runs beside it.
-    os.environ.setdefault("PARITY_INNER_JOBS", str(min(4, os.cpu_count() or 1) if jobs == 1 else 1))
 
     print(f"== building examples once ==", flush=True)
     if build_examples():
@@ -120,44 +153,29 @@ def main(argv: list[str]) -> int:
         print("warning: example prebuild failed; harnesses will build on demand", flush=True)
 
     print(f"== running {len(tests)} harness(es), {jobs} worker(s) ==", flush=True)
-    failed = 0
     started = time.perf_counter()
+    results: dict[str, tuple[int, str, float]] = {}
 
-    if jobs == 1:
-        for t in tests:
-            print(f"===== {t.name} =====", flush=True)
-            _, code, out, elapsed = run_one(t)
-            sys.stdout.write(out)
-            sys.stdout.flush()
-            if code != 0:
-                failed += 1
-                print(f"----- {t.name} FAILED (exit {code}, {elapsed:.1f}s) -----", flush=True)
-            else:
-                print(f"----- {t.name} ok ({elapsed:.1f}s) -----", flush=True)
+    if jobs > 1 and len(tests) > 1:
+        heavy = [t for t in tests if "decoration" in t.name]
+        rest = [t for t in tests if "decoration" not in t.name]
+        if heavy and rest:
+            # Decoration has 21 independent (seed, mode) pairs; run it alone so its inner pool
+            # gets the whole machine instead of oversubscribing the top-level workers.
+            os.environ["PARITY_INNER_JOBS"] = str(min(4, os.cpu_count() or 1))
+            results.update(run_batch(heavy, 1))
+            os.environ["PARITY_INNER_JOBS"] = "1"
+            results.update(run_batch(rest, jobs))
+        else:
+            os.environ["PARITY_INNER_JOBS"] = "1"
+            results.update(run_batch(tests, jobs))
     else:
-        results: dict[str, tuple[int, str, float]] = {}
-        progress_lock = threading.Lock()
+        os.environ["PARITY_INNER_JOBS"] = (
+            str(min(4, os.cpu_count() or 1)) if len(tests) == 1 else "1"
+        )
+        results.update(run_batch(tests, jobs))
 
-        def done(fut: concurrent.futures.Future) -> None:
-            test, code, out, elapsed = fut.result()
-            results[test.name] = (code, out, elapsed)
-            with progress_lock:
-                status = "OK" if code == 0 else f"FAILED (exit {code})"
-                print(f"  {test.name:<40} {status:<18} {elapsed:6.1f}s", flush=True)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-            futures = [pool.submit(run_one, t) for t in tests]
-            for fut in concurrent.futures.as_completed(futures):
-                done(fut)
-
-        for t in tests:
-            code, out, elapsed = results[t.name]
-            print(f"===== {t.name} =====", flush=True)
-            sys.stdout.write(out)
-            sys.stdout.flush()
-            if code != 0:
-                failed += 1
-
+    failed = sum(1 for code, _, _ in results.values() if code != 0)
     total = time.perf_counter() - started
     print(f"----- {len(tests) - failed}/{len(tests)} passed in {total:.1f}s -----", flush=True)
     return 1 if failed else 0

@@ -67,7 +67,7 @@ py tools/parity.py random     # one harness by name
 The runner caches both halves of each harness under `.local/<harness>/` - the Java oracle stdout
 (keyed on source/jar/argv/env) and the Rust probe stdout (keyed on the example binary/argv/env,
 rebuilt before hashing) - and runs the harnesses in a bounded pool (`min(4, cores)` by default).
-A warm run (no Rust or oracle changes) is ~7 s; a cold run is ~5 min. Use `-Fresh` after an
+A warm run (no Rust or oracle changes) is ~7 s; a cold `-Fresh` run is ~4.5 min. Use `-Fresh` after an
 oracle/jar/fixture change (or in CI), and `-Jobs N` to cap workers:
 
 ```sh
@@ -1083,3 +1083,12 @@ heightmap) can match. P0's remaining items still need a running binary.
   route probes through `Probe`. Full warm `verify.ps1`: **6.6 s** (suite itself 2.6 s; from 38 s
   after the oracle cache, 610 s originally). Cold is unchanged (~293 s, Java-bound). 18/18 green,
   135 tests. **Next:** unchanged.
+- **2026-11-27 - session 31c (verify tooling: cold scheduling).** `tools/parity.py` now runs the
+  decoration harness alone first with `PARITY_INNER_JOBS=min(4, cores)` (its 21 seed/mode pairs fan
+  out), then the other 17 at the normal worker count. Measured `--fresh --jobs 4`: decoration 87 s
+  alone, rest 192 s wall, **279 s total** vs **293 s** before (~5%; this box's effective parallel
+  throughput is only ~2x despite 4 logical CPUs). Considered but rejected: collapsing decoration's
+  21 JVMs to 3 (one per seed). The Mesa cache is per-seed, but `BiomeGenBase`'s
+  `theBiomeDecorator`/`GRASS_COLOR_NOISE` are per-JVM statics shared by all worlds, so modes would
+  leak generator state (`mushroomType`, `BigTree.heightLimit`) and no longer match the fresh-process
+  Rust probe; it needs explicit state resets + re-validation for a cold-only ~30 s gain. 18/18 green.
