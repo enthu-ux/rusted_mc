@@ -14,6 +14,7 @@ use crate::chunk::{self, GeneratedChunk};
 use crate::decorate::{self, DecorateOptions, DecorateSettings, DecorateWorld};
 use crate::layer::BiomeLayers;
 use crate::noise::{Octaves, Perlin};
+use crate::populate;
 use crate::structure::mineshaft::Mineshaft;
 use crate::structure::monument::OceanMonument;
 use crate::structure::monument_placement;
@@ -43,6 +44,11 @@ const BIOME_DEPTH_OFFSET: f32 = 0.0;
 const BIOME_SCALE_WEIGHT: f32 = 1.0;
 const BIOME_SCALE_OFFSET: f32 = 0.0;
 const SEA_LEVEL: i32 = 63;
+
+// `ChunkProviderSettings.Factory` defaults for the `populate` stages.
+const WATER_LAKE_CHANCE: i32 = 4;
+const LAVA_LAKE_CHANCE: i32 = 80;
+const DUNGEON_CHANCE: i32 = 8;
 
 // Block states, `id << 4 | meta`.
 const BEDROCK: u16 = 7 << 4;
@@ -145,7 +151,7 @@ fn biome_height(id: i32) -> (f32, f32) {
 }
 
 /// `BiomeGenBase.temperature`, exact per id (mutations may override their base's value).
-fn biome_temp(id: i32) -> f32 {
+pub(crate) fn biome_temp(id: i32) -> f32 {
     match id {
         0 => 0.5,
         1 => 0.8,
@@ -922,6 +928,160 @@ impl TerrainGen {
         }
 
         world.chunk_blocks(chunk_x, chunk_z).to_vec()
+    }
+
+    /// The full `ChunkProviderGenerate.populate` for one chunk: the four covering passes write the
+    /// structures, water/lava lakes, dungeons, `BiomeGenBase.decorate` and the freeze/snow pass, all
+    /// on one world with one per-pass `Random`, then the target chunk is returned.
+    ///
+    /// `SpawnerAnimals.performWorldGenSpawning` is skipped: it writes entities only (no blocks) and
+    /// its draws come after `decorate`, with nothing afterwards reading `rand`. Structures run in
+    /// vanilla's order and a fixed pass order; `onBlockAdded` block-update consequences and
+    /// multi-start `HashMap` ordering stay out of scope (see `handoff.md`).
+    pub fn populate_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> GeneratedChunk {
+        let mut world = ChunkWorld::new();
+        let mut center_biomes = Vec::new();
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let cx = chunk_x + dx;
+                let cz = chunk_z + dz;
+                let chunk = self.generate_chunk(cx, cz, GenOptions::vanilla());
+                if dx == 0 && dz == 0 {
+                    center_biomes = chunk.biomes.clone();
+                }
+                world.decorate_world().insert_biomes(cx, cz, chunk.biomes);
+                world.insert_chunk(cx, cz, chunk.blocks);
+            }
+        }
+
+        let settings = DecorateSettings::default();
+        let decorate_opts = DecorateOptions::vanilla();
+        for a in [chunk_x - 1, chunk_x] {
+            for b in [chunk_z - 1, chunk_z] {
+                let mut rand = placement::populate_rand(self.seed, a, b);
+                let bbox = placement::structure_box(a, b);
+                let x0 = (a << 4) + 8;
+                let z0 = (b << 4) + 8;
+                let x1 = x0 + 15;
+                let z1 = z0 + 15;
+
+                // Structures, in `ChunkProviderGenerate.populate`'s order.
+                let mut village_sizeable = false;
+                self.mineshafts
+                    .for_each_start_meeting_mut(x0, z0, x1, z1, |start| {
+                        placement::generate_structure(start, &mut world, &mut rand, &bbox);
+                    });
+                self.village
+                    .for_each_start_meeting_mut(x0, z0, x1, z1, |start| {
+                        placement::generate_structure(start, &mut world, &mut rand, &bbox);
+                        village_sizeable = true;
+                    });
+                self.stronghold
+                    .for_each_start_meeting_mut(x0, z0, x1, z1, |start| {
+                        placement::generate_structure(start, &mut world, &mut rand, &bbox);
+                    });
+                self.scattered
+                    .for_each_start_meeting_mut(x0, z0, x1, z1, |start| {
+                        placement::generate_structure(start, &mut world, &mut rand, &bbox);
+                    });
+                for start in self.monuments.starts_intersecting(a, b) {
+                    for piece in &start.pieces {
+                        if matches!(piece.kind, PieceKind::MonumentBuilding)
+                            && piece.bbox.intersects_with(&bbox)
+                        {
+                            let facing = piece
+                                .coord_base_mode
+                                .unwrap_or(crate::structure::Facing::North);
+                            monument_placement::monument_building_parts(
+                                &mut world,
+                                &bbox,
+                                &mut rand,
+                                self.seed,
+                                start.chunk_x,
+                                start.chunk_z,
+                                piece.bbox,
+                                facing,
+                            );
+                        }
+                    }
+                }
+
+                // `BiomeGenBase var7 = world.getBiomeGenForCoords(field.add(16, 0, 16));`
+                let biome = world
+                    .decorate_world()
+                    .biome_at((a << 4) + 16, (b << 4) + 16);
+
+                // Water lake (desert/desert hills and sizeable villages forbid it).
+                if biome != 2
+                    && biome != 17
+                    && !village_sizeable
+                    && rand.next_int_bound(WATER_LAKE_CHANCE) == 0
+                {
+                    let x = (a << 4) + rand.next_int_bound(16) + 8;
+                    let y = rand.next_int_bound(256);
+                    let z = (b << 4) + rand.next_int_bound(16) + 8;
+                    populate::generate_lake(
+                        world.decorate_world(),
+                        &mut rand,
+                        populate::WATER,
+                        x,
+                        y,
+                        z,
+                    );
+                }
+                // Lava lake (`useLavaLakes` gates only the body, after the chance draw).
+                if !village_sizeable && rand.next_int_bound(LAVA_LAKE_CHANCE / 10) == 0 {
+                    let x = (a << 4) + rand.next_int_bound(16) + 8;
+                    let inner = rand.next_int_bound(248);
+                    let y = rand.next_int_bound(inner + 8);
+                    let z = (b << 4) + rand.next_int_bound(16) + 8;
+                    if y < SEA_LEVEL || rand.next_int_bound(LAVA_LAKE_CHANCE / 8) == 0 {
+                        populate::generate_lake(
+                            world.decorate_world(),
+                            &mut rand,
+                            populate::LAVA,
+                            x,
+                            y,
+                            z,
+                        );
+                    }
+                }
+
+                // Dungeons.
+                for _ in 0..DUNGEON_CHANCE {
+                    let x = (a << 4) + rand.next_int_bound(16) + 8;
+                    let y = rand.next_int_bound(256);
+                    let z = (b << 4) + rand.next_int_bound(16) + 8;
+                    populate::generate_dungeon(world.decorate_world(), &mut rand, x, y, z);
+                }
+
+                decorate::decorate(
+                    world.decorate_world(),
+                    &mut rand,
+                    a * 16,
+                    b * 16,
+                    biome,
+                    &settings,
+                    decorate_opts,
+                    &mut self.grass_color_noise,
+                    &mut self.big_mushroom_state,
+                    &mut self.big_tree_state,
+                );
+
+                // `SpawnerAnimals.performWorldGenSpawning` (entities only) is skipped here.
+
+                populate::freeze_and_snow(world.decorate_world(), a, b);
+            }
+        }
+
+        let blocks = world.chunk_blocks(chunk_x, chunk_z).to_vec();
+        let height_map = chunk::height_map(&blocks);
+        GeneratedChunk {
+            blocks,
+            biomes: center_biomes,
+            height_map,
+            structures: Vec::new(),
+        }
     }
 
     /// `provideChunk` steps 1-4, returning the primer and the generation biome array.

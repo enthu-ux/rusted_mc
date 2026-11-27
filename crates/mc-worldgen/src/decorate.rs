@@ -28,8 +28,8 @@ pub mod trees;
 
 use crate::noise::Perlin;
 use blocks::{
-    material_blocks_movement, material_is_leaves, material_is_replaceable, material_is_water, CLAY,
-    DIAMOND_ORE, DIRT, GRASS, GRAVEL, SAND, STONE,
+    is_full_block, material_blocks_movement, material_is_leaves, material_is_replaceable,
+    material_is_water, CLAY, DIAMOND_ORE, DIRT, GRASS, GRAVEL, SAND, STONE,
 };
 
 /// `ChunkProviderSettings.Factory` defaults (`func_177863_a`), limited to the fields decoration uses.
@@ -179,7 +179,13 @@ impl DecorateOptions {
 /// precipitation-height cache, which 16-block sections are allocated, and `getTopFilledSegment`.
 pub struct DecorateWorld {
     chunks: BTreeMap<(i32, i32), ChunkState>,
+    /// `Chunk.getBiomeArray()` per chunk (the generation biome ids, `x + z * 16`), used by
+    /// `World.getBiomeGenForCoords` at `populate` (a loaded chunk reads its stored array).
+    biomes: BTreeMap<(i32, i32), Vec<u8>>,
     pub sea_level: i32,
+    /// `BiomeGenBase.temperatureNoise` (`NoiseGeneratorPerlin(Random(1234), 1)`) for
+    /// `getFloatTemperature`.
+    temperature_noise: Perlin,
 }
 
 struct ChunkState {
@@ -210,8 +216,87 @@ impl DecorateWorld {
     pub fn new(sea_level: i32) -> DecorateWorld {
         DecorateWorld {
             chunks: BTreeMap::new(),
+            biomes: BTreeMap::new(),
             sea_level,
+            temperature_noise: Perlin::new(&mut JavaRandom::new(1234), 1),
         }
+    }
+
+    /// Supplies a chunk's generation biome array (`GeneratedChunk.biomes`, `x + z * 16`), the source
+    /// of `World.getBiomeGenForCoords` for a loaded chunk during `populate`.
+    pub fn insert_biomes(&mut self, chunk_x: i32, chunk_z: i32, biomes: Vec<u8>) {
+        self.biomes.insert((chunk_x, chunk_z), biomes);
+    }
+
+    /// `World.getBiomeGenForCoords` for a loaded chunk: `Chunk.getBiome`'s stored generation biome
+    /// id. A missing chunk falls back to plains (vanilla would query the biome generator).
+    pub fn biome_at(&self, x: i32, z: i32) -> i32 {
+        match self.biomes.get(&(x >> 4, z >> 4)) {
+            Some(ids) => ids[((x & 15) + (z & 15) * 16) as usize] as i32,
+            None => 1,
+        }
+    }
+
+    /// `BiomeGenBase.getFloatTemperature(BlockPos)`: the biome temperature above y=64 is lowered by
+    /// the shared `temperatureNoise` and the altitude.
+    pub fn temperature_at(&self, x: i32, y: i32, z: i32) -> f32 {
+        let base = crate::terrain::biome_temp(self.biome_at(x, z));
+        if y > 64 {
+            let n = (self
+                .temperature_noise
+                .sample_2d(x as f64 / 8.0, z as f64 / 8.0)
+                * 4.0) as f32;
+            base - (n + y as f32 - 64.0) * 0.05f32 / 30.0f32
+        } else {
+            base
+        }
+    }
+
+    /// `World.canBlockFreezeWater` -> `canBlockFreeze(pos, false)`. Block light is 0 during
+    /// worldgen, so the `< 10` test always holds.
+    pub fn can_block_freeze_water(&self, x: i32, y: i32, z: i32) -> bool {
+        if self.temperature_at(x, y, z) > 0.15 {
+            return false;
+        }
+        if (0..256).contains(&y) {
+            let v = self.get(x, y, z);
+            let id = (v >> 4) as i32;
+            if (id == blocks::FLOWING_WATER || id == blocks::WATER) && v & 15 == 0 {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `World.canSnowAt(pos, true)`: `BlockSnow.canPlaceBlockAt` reads the block below (ice and
+    /// packed ice reject; leaves accept; a 7+ layer snow block accepts; else an opaque full block
+    /// that blocks movement).
+    pub fn can_snow_at(&self, x: i32, y: i32, z: i32) -> bool {
+        if self.temperature_at(x, y, z) > 0.15 {
+            return false;
+        }
+        if (0..256).contains(&y) {
+            if (self.get(x, y, z) >> 4) != 0 {
+                return false;
+            }
+            let below = self.get(x, y - 1, z);
+            let below_id = (below >> 4) as i32;
+            if below_id != blocks::ICE && below_id != blocks::PACKED_ICE {
+                if material_is_leaves(below_id) {
+                    return true;
+                }
+                if below_id == blocks::SNOW_LAYER && (below & 15) & 7 >= 6 {
+                    return true;
+                }
+                return is_full_block(below_id) && material_blocks_movement(below_id);
+            }
+        }
+        false
+    }
+
+    /// `World.getTopSolidOrLiquidBlock`.
+    pub fn get_top_solid_or_liquid(&self, x: i32, z: i32) -> i32 {
+        self.top_solid_or_liquid(x, z)
     }
 
     /// Supplies a chunk's generated terrain (`provideChunk`), initialising `Chunk`-equivalent state.

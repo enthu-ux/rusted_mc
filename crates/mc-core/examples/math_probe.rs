@@ -96,5 +96,7 @@ fn main() {
     out.push_str(&format!("am {}\n", hd(jmath::abs_max(-3.0, -7.0))));
     out.push_str(&format!("am2 {}\n", hd(jmath::abs_max(4.0, -2.0))));
 
+    out.push_str(&format!("table {:016x}\n", jmath::table_hash()));
+
     print!("{out}");
 }

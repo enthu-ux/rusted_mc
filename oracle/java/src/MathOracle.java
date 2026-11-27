@@ -77,6 +77,25 @@ public class MathOracle {
         sb.append("am ").append(hd(MathHelper.abs_max(-3.0, -7.0))).append('\n');
         sb.append("am2 ").append(hd(MathHelper.abs_max(4.0, -2.0))).append('\n');
 
+        // Full `SIN_TABLE` digest (reflect the game's real table; the 200 samples above miss the
+        // one entry where a platform libm differs from fdlibm at exactly PI).
+        try {
+            java.lang.reflect.Field f = MathHelper.class.getDeclaredField("SIN_TABLE");
+            f.setAccessible(true);
+            float[] t = (float[]) f.get(null);
+            long h = 0xcbf29ce484222325L;
+            for (float v : t) {
+                int bits = Float.floatToRawIntBits(v);
+                for (int b = 0; b < 4; b++) {
+                    h ^= (bits >>> (8 * b)) & 0xffL;
+                    h *= 0x100000001b3L;
+                }
+            }
+            sb.append(String.format("table %016x%n", h));
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+
         System.out.print(sb);
     }
 }

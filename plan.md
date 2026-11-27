@@ -183,10 +183,12 @@ Version-agnostic and directly address "don't reinvent the wheel":
 **Staged.** All six structure layouts are ported and the **biome decoration** is complete
 (`decoration_parity` gates ores, surface, vegetation, trees, springs and the per-biome `decorate`
 overrides via its `full` mode); it changes blocks, so the Gate-C name stays reserved for the final
-chunk. **Note (session 28):** the full `ChunkProviderGenerate.populate` also runs water/lava lakes
-(`WorldGenLakes`), `WorldGenDungeons`, `SpawnerAnimals.performWorldGenSpawning` (entities only) and the
-freeze/snow pass; those are **not** ported yet, so "decoration complete" means `BiomeGenBase.decorate`,
-not the whole populate. The pieces that exist are pinned separately:
+chunk. **Note (session 32):** the rest of `ChunkProviderGenerate.populate` is now ported too -
+`WorldGenLakes` (water + lava), `WorldGenDungeons`, the freeze/snow pass, and the full per-pass
+driver `TerrainGen::populate_chunk` (structures → lakes → dungeons → decorate → freeze on one shared
+`Random`); `SpawnerAnimals.performWorldGenSpawning` is entities-only and skipped. `populate_parity`
+(`tools/test_populate_parity.py`) gates the full pipeline on a curated corpus (8 chunks x 3 seeds,
+blocks + biome + heightmap). The pieces are also pinned separately:
 `worldgen_parity`
 (`tools/test_worldgen_parity.py`) covers blocks + metadata + biome + heightmap for the
 **pre-decoration** `provideChunk` output on these seeds/chunks (plus cave/ravine/mesa/ocean
@@ -198,10 +200,11 @@ mineshaft half is ported (`mineshaft_placement_parity`) together with the RNG it
 structure layouts are ported, and mineshaft, swamp hut, desert/jungle pyramid, ocean monument, nether
 fortress, village and stronghold block placement are done (`mineshaft_placement_parity`,
 `temple_placement_parity`, `monument_placement_parity`, `nether_placement_parity`,
-`village_placement_parity`, `stronghold_placement_parity`). Remaining for Gate C: the
-**lake / dungeon / freeze-snow `populate` stages**. (Vanilla's
-`onBlockAdded` block-update consequences - rail reshaping, torch support - are outside the placement
-port; see `handoff.md`.)
+`village_placement_parity`, `stronghold_placement_parity`). Remaining for Gate C: three residual
+full-chunk gaps - the deferred `onBlockAdded` consequences (a non-remote oracle drops unsupported
+mineshaft torches), the pre-existing lava-spring/cascade decoration fixture, and a 1-block ore-edge
+case. (Vanilla's `onBlockAdded` block-update consequences - rail reshaping, torch support - are
+outside the placement port; see `handoff.md`.)
 
 ## 12. Risks & Mitigations
 

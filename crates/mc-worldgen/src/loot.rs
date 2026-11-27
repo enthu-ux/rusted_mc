@@ -120,6 +120,27 @@ pub mod chest {
         content(ItemStackSpec::new(417, 0, 1), 1, 1, 1),   // iron_horse_armor
     ];
 
+    /// `WorldGenDungeons.CHESTCONTENT` (15 entries, total weight 125). The dungeon chest; the book
+    /// is appended per chest and `generateChestContents` fills a 27-slot `TileEntityChest` with 8
+    /// stacks. Item ids/max stack sizes from `Item.registerItems()` / `items.json`.
+    pub const DUNGEON_CHEST_CONTENT: [ChestContent; 15] = [
+        content(ItemStackSpec::new(329, 0, 1), 1, 1, 10), // saddle
+        content(ItemStackSpec::new(265, 0, 64), 1, 4, 10), // iron_ingot
+        content(ItemStackSpec::new(297, 0, 64), 1, 1, 10), // bread
+        content(ItemStackSpec::new(296, 0, 64), 1, 4, 10), // wheat
+        content(ItemStackSpec::new(289, 0, 64), 1, 4, 10), // gunpowder
+        content(ItemStackSpec::new(287, 0, 64), 1, 4, 10), // string
+        content(ItemStackSpec::new(325, 0, 1), 1, 1, 10), // bucket
+        content(ItemStackSpec::new(322, 0, 64), 1, 1, 1), // golden_apple
+        content(ItemStackSpec::new(331, 0, 64), 1, 4, 10), // redstone
+        content(ItemStackSpec::new(2256, 0, 1), 1, 1, 4), // record_13
+        content(ItemStackSpec::new(2257, 0, 1), 1, 1, 4), // record_cat
+        content(ItemStackSpec::new(421, 0, 64), 1, 1, 10), // name_tag
+        content(ItemStackSpec::new(418, 0, 1), 1, 1, 2),  // golden_horse_armor
+        content(ItemStackSpec::new(417, 0, 1), 1, 1, 5),  // iron_horse_armor
+        content(ItemStackSpec::new(419, 0, 1), 1, 1, 1),  // diamond_horse_armor
+    ];
+
     /// `ComponentScatteredFeaturePieces.DesertPyramid.itemsToGenerateInTemple` (10 entries, total
     /// weight 71). Item ids/max stack sizes from `Item.registerItems()`.
     pub const TEMPLE_CHEST_CONTENT: [ChestContent; 10] = [

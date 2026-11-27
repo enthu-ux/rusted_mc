@@ -24,13 +24,11 @@
 //! RNG order matters: the corridor chest rolls consume the enchantment + chest draws ported in
 //! `loot.rs`, before the rest of the section's placement.
 
-use std::collections::BTreeMap;
-
 use mc_core::random::JavaRandom;
 
 use super::{BoundingBox, Facing, Piece, PieceKind};
 use crate::chunk::{is_full_block, material_is_air, material_is_liquid};
-use crate::decorate::blocks::{material_blocks_movement, material_is_leaves};
+use crate::decorate::DecorateWorld;
 use crate::loot::chest::MINESHAFT_CHEST_CONTENT;
 use crate::loot::chest::{
     enchanted_book_content, generate_chest_contents, with_extra, JUNGLE_DISPENSER_CONTENT,
@@ -65,12 +63,25 @@ pub fn structure_box(chunk_x: i32, chunk_z: i32) -> BoundingBox {
 
 /// A read/write view over the chunk buffers a `populate` pass can reach (`World.getBlockState` /
 /// `World.setBlockState`). Blocks are `id << 4 | meta`, indexed `x << 12 | z << 8 | y`.
-#[derive(Default)]
+///
+/// This is a thin wrapper over [`DecorateWorld`], so a full `populate` pass can interleave structure
+/// placement with the lake/dungeon/decoration/freeze stages on one shared world state (they share
+/// the pass's `Random`). Structure placement only reads/writes blocks; the extra `Chunk` state
+/// (height map, sky light) is maintained for the later stages.
 pub struct ChunkWorld {
-    chunks: BTreeMap<(i32, i32), Vec<u16>>,
+    inner: DecorateWorld,
+}
+
+impl Default for ChunkWorld {
+    fn default() -> ChunkWorld {
+        ChunkWorld {
+            inner: DecorateWorld::new(63),
+        }
+    }
 }
 
 #[inline]
+#[cfg(test)]
 fn chunk_index(x: i32, y: i32, z: i32) -> usize {
     (((x & 15) as usize) << 12) | (((z & 15) as usize) << 8) | y as usize
 }
@@ -82,49 +93,35 @@ impl ChunkWorld {
 
     /// Supplies a chunk's terrain (from `TerrainGen::generate_chunk`).
     pub fn insert_chunk(&mut self, chunk_x: i32, chunk_z: i32, blocks: Vec<u16>) {
-        self.chunks.insert((chunk_x, chunk_z), blocks);
+        self.inner.insert_chunk(chunk_x, chunk_z, blocks);
     }
 
     /// The chunk's final block array (`id << 4 | meta`).
     pub fn chunk_blocks(&self, chunk_x: i32, chunk_z: i32) -> &[u16] {
-        &self.chunks[&(chunk_x, chunk_z)]
+        self.inner.chunk_blocks(chunk_x, chunk_z)
     }
 
     /// `World.getBlockState` at absolute coordinates. Air outside the build height or a missing
     /// chunk (vanilla generates on demand; the driver supplies every reachable chunk).
     pub(crate) fn get(&self, x: i32, y: i32, z: i32) -> u16 {
-        if !(0..256).contains(&y) {
-            return 0;
-        }
-        match self.chunks.get(&(x >> 4, z >> 4)) {
-            Some(blocks) => blocks[chunk_index(x, y, z)],
-            None => 0,
-        }
+        self.inner.get(x, y, z)
     }
 
     /// `World.setBlockState` at absolute coordinates (drops writes to a missing chunk, which the
     /// driver prevents).
     pub(crate) fn set(&mut self, x: i32, y: i32, z: i32, value: u16) {
-        if !(0..256).contains(&y) {
-            return;
-        }
-        if let Some(blocks) = self.chunks.get_mut(&(x >> 4, z >> 4)) {
-            blocks[chunk_index(x, y, z)] = value;
-        }
+        self.inner.set(x, y, z, value);
     }
 
     /// `World.getTopSolidOrLiquidBlock`'s y: scan down from the top of the build height for the
     /// first block that blocks movement and is not leaves (liquids do not block movement).
     pub fn get_top_solid_or_liquid(&self, x: i32, z: i32) -> i32 {
-        let mut y = 255;
-        while y >= 0 {
-            let id = (self.get(x, y - 1, z) >> 4) as i32;
-            if material_blocks_movement(id) && !material_is_leaves(id) {
-                break;
-            }
-            y -= 1;
-        }
-        y
+        self.inner.get_top_solid_or_liquid(x, z)
+    }
+
+    /// The shared world view for the `populate` stages after structure placement.
+    pub fn decorate_world(&mut self) -> &mut DecorateWorld {
+        &mut self.inner
     }
 }
 
@@ -1969,11 +1966,21 @@ fn jungle_pyramid(
 
 /// `BlockChest.correctFacing` -> the chest's facing-index metadata.
 pub(crate) fn chest_facing_meta(world: &ChunkWorld, x: i32, y: i32, z: i32) -> u16 {
+    chest_facing_meta_with(|a, b, c| world.get(a, b, c), x, y, z)
+}
+
+/// `BlockChest.correctFacing` over any block getter (`StructureComponent` and `WorldGenDungeons`).
+pub(crate) fn chest_facing_meta_with(
+    get: impl Fn(i32, i32, i32) -> u16,
+    x: i32,
+    y: i32,
+    z: i32,
+) -> u16 {
     const CHEST: i32 = 54;
     let mut selected: Option<Facing> = None;
     for f in [Facing::North, Facing::East, Facing::South, Facing::West] {
         let (dx, dz) = f.offset();
-        let id = (world.get(x + dx, y, z + dz) >> 4) as i32;
+        let id = (get(x + dx, y, z + dz) >> 4) as i32;
         if id == CHEST {
             return Facing::North.index() as u16;
         }
@@ -1991,15 +1998,15 @@ pub(crate) fn chest_facing_meta(world: &ChunkWorld, x: i32, y: i32, z: i32) -> u
 
     let mut facing = Facing::North;
     let (dx, dz) = facing.offset();
-    if is_full_block((world.get(x + dx, y, z + dz) >> 4) as i32) {
+    if is_full_block((get(x + dx, y, z + dz) >> 4) as i32) {
         facing = facing.opposite();
     }
     let (dx, dz) = facing.offset();
-    if is_full_block((world.get(x + dx, y, z + dz) >> 4) as i32) {
+    if is_full_block((get(x + dx, y, z + dz) >> 4) as i32) {
         facing = facing.rotate_y();
     }
     let (dx, dz) = facing.offset();
-    if is_full_block((world.get(x + dx, y, z + dz) >> 4) as i32) {
+    if is_full_block((get(x + dx, y, z + dz) >> 4) as i32) {
         facing = facing.opposite();
     }
     facing.index() as u16

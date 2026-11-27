@@ -11,6 +11,7 @@ pub const AIR: i32 = 0;
 pub const STONE: i32 = 1;
 pub const GRASS: i32 = 2;
 pub const DIRT: i32 = 3;
+pub const COBBLESTONE: i32 = 4;
 pub const FLOWING_WATER: i32 = 8;
 pub const WATER: i32 = 9;
 pub const FLOWING_LAVA: i32 = 10;
@@ -37,6 +38,8 @@ pub const DIAMOND_ORE: i32 = 56;
 pub const FARMLAND: i32 = 60;
 pub const ICE: i32 = 79;
 pub const SNOW: i32 = 80;
+/// `Blocks.snow_layer` (the thin layer; distinct from the snow block id 80).
+pub const SNOW_LAYER: i32 = 78;
 pub const CACTUS: i32 = 81;
 pub const CLAY: i32 = 82;
 pub const REEDS: i32 = 83;

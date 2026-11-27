@@ -25,14 +25,17 @@ commit/push.
   overrides), the **swamp hut + desert pyramid + jungle pyramid block placement** (the
   scattered-feature `populate` half), the **ocean monument block placement** (shell + room graph), the
   **nether fortress block placement** (all 14 piece bodies, on a synthetic nether base), the
-  **village block placement** (all 12 piece bodies, `HPos` caching and the desert substitution), and
-  the **stronghold block placement** (all reachable pieces, the `Stones` selector, the liquid-drop
-  path and the end-portal frames).
-- **Next increment:** the remaining `populate` pieces the Gate-C chunk still needs (water/lava lakes,
-  dungeons, the freeze/snow pass; see below), then the full Gate-C chunk. **All six structures now
-  have both layout and block placement parity.**
-- **Baseline:** `scripts/verify.ps1` -> **18/18** harnesses, **135** unit tests, fmt clean (~7 s
-  warm, ~4.6 min cold with `-Fresh`).
+  **village block placement** (all 12 piece bodies, `HPos` caching and the desert substitution), the
+  **stronghold block placement** (all reachable pieces, the `Stones` selector, the liquid-drop
+  path and the end-portal frames), and now the **rest of `populate`**: `WorldGenLakes` (water +
+  lava), `WorldGenDungeons`, the freeze/snow pass and the full per-pass `populate_chunk` driver
+  (`populate_parity`).
+- **Next increment:** close the residual full-chunk gaps and claim Gate C: the deferred
+  `onBlockAdded` effects (a non-remote oracle drops unsupported mineshaft torches), the
+  pre-existing decoration coverage gap (a lava-spring/cascade fixture), and a 1-block ore-edge
+  case. See "Open threads".
+- **Baseline:** `scripts/verify.ps1` -> **19/19** harnesses, **136** unit tests, fmt clean (~26 s
+  warm after the new harness, ~5 min cold with `-Fresh`).
 
 ---
 
@@ -76,9 +79,10 @@ powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -Jobs 1      # seria
 py tools/parity.py --fresh                                               # same, bare runner
 ```
 
-Expected today: `cargo test` and `fmt` pass (135 unit tests); `py tools/parity.py` reports
-`18/18 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
-`biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 492; `caves_parity` 46,260;
+Expected today: `cargo test` and `fmt` pass (136 unit tests); `py tools/parity.py` reports
+`19/19 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
+`biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 493 (incl. the full `SIN_TABLE`
+hash); `caves_parity` 46,260;
 `worldgen_parity` 7,770; `structures_parity` 10,533 lines / 96 starts (mineshaft + scattered feature +
 monument + nether fortress + village + stronghold); `jhash_parity` 16 orders / 301 keys;
 `loot_parity` 25 enchantments / 28 cases = 695 lines; `mineshaft_placement_parity` 14 chunks = 3,598 lines;
@@ -88,7 +92,8 @@ pyramid); `monument_placement_parity` 3 seeds = 771 lines, 7,518 blocks (ocean m
 `nether_placement_parity` 6 chunks = 1,542 lines, 10,531 blocks (nether fortress, synthetic base;
 the `hellRNG` replay is pinned separately - 48 draws); `village_placement_parity` 6 chunks = 1,542
 lines, 2,059 blocks (all village pieces incl. the desert substitution); `stronghold_placement_parity`
-9 chunks = 2,313 lines, 8,430 blocks (all reachable pieces + the liquid-drop path)).
+9 chunks = 2,313 lines, 8,430 blocks (all reachable pieces + the liquid-drop path);
+`populate_parity` 8 chunks x 3 seeds = 6,216 lines, the full `populate` pipeline).
 
 `tools/perf_baseline.py` is **manual** (not part of `verify`): it builds release binaries, runs the
 Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `MC_SPANS=1`,
@@ -117,7 +122,7 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 - **Inputs:** done. Official 1.8.9 jars (hash-checked), clean vanilla decompile (0 Forge refs),
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
-- **Workspace:** 11 crates; `cargo test` + `fmt` green (18/18 harnesses, 135 tests).
+- **Workspace:** 11 crates; `cargo test` + `fmt` green (19/19 harnesses, 136 tests).
   `scripts/verify.ps1` is **~7 s warm / ~4.6 min cold** via cached oracle+probe output and a bounded
   runner (`-Fresh`, `-Jobs N`).
 - **Performance (P0 substrate done):** `docs/performance-contract.md` + `docs/performance-baselines.md`;
@@ -170,7 +175,13 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   override generators: `WorldGenDoublePlant`, `WorldGenMelon`, `WorldGenVines` (a no-op at the
   jungle override's `y=128`), `WorldGenIceSpike`/`WorldGenIcePath`, `WorldGenBlockBlob`,
   `WorldGenDesertWells`, hills emerald/monster egg; also the plain `BiomeGenMutated` biomes, whose
-  `decorate` runs the base biome's decorator), driven by `TerrainGen::decorate_chunk`; `mc-perf`.
+  `decorate` runs the base biome's decorator), driven by `TerrainGen::decorate_chunk`;
+  `mc-worldgen::populate` (`WorldGenLakes` water + lava, `WorldGenDungeons` incl. its chest list +
+  spawner draw, and the freeze/snow pass), driven by `TerrainGen::populate_chunk` which runs the
+  four covering passes' structures → lakes → dungeons → decorate → freeze on one shared world and
+  one per-pass `Random`; the `ChunkWorld` structure shim now wraps `DecorateWorld` so the stages
+  share block + light + biome state. `mc-core::jmath`'s `SIN_TABLE` is pinned bit-exact to Java's
+  fdlibm table (one platform-libm outlier at `sin(PI)`). `mc-perf`.
 - **Docs/policy:** `plan.md` (§1-17), `README.md`, `AGENTS.md`, `docs/PHILOSOPHY.md`,
   `docs/ARCHITECTURE.md`, `docs/deviations.md`, `deviations.toml`, `docs/horizon-reuse.md`,
   `docs/horizon-performance-reuse.md`, `docs/performance-contract.md`, `docs/performance-baselines.md`,
@@ -190,8 +201,9 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   ores, surface, vegetation, trees, springs, the full chunk with the per-biome overrides),
   `nether_placement_parity` (nether fortress blocks, synthetic base), `village_placement_parity`
   (all village pieces incl. the desert substitution), `stronghold_placement_parity` (all reachable
-  pieces + the liquid-drop path).
-  Unit tests: 112 `mc-worldgen`, 13 `mc-core`, 10 `mc-perf`.
+  pieces + the liquid-drop path), `populate_parity` (the full `populate` pipeline: terrain + caves +
+  structures + lakes + dungeons + decoration + freeze/snow on one shared per-pass `Random`).
+  Unit tests: 112 `mc-worldgen`, 14 `mc-core`, 10 `mc-perf`.
 - Notable vanilla quirks encoded: `GenLayerHills.field_151628_d` unseeded top Zooms; Mesa cache
   `Random(0)` + `func_150619_a` orange-loop `+2` step; `ChunkPrimer` x/z transposition in
   `generateBiomeTerrain`; caves and ravines reach biomes through the **biome cache** (index
@@ -204,15 +216,16 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 ## Next steps (prioritized, each with a pass condition)
 
-**Recommended next: close the `populate` gap below**, then assemble the full Gate-C chunk. All six
-structure generators now have **layout + block placement** parity: mineshaft, swamp hut +
-desert/jungle pyramids, ocean monument, nether fortress, village and stronghold; their harnesses are
-the templates. **Gate-C gap found in session 28:** the full `ChunkProviderGenerate.populate` also runs
-`WorldGenLakes` (water + lava), `WorldGenDungeons`, `SpawnerAnimals.performWorldGenSpawning` (entities
-only - no block writes, but it draws RNG after `decorate`) and the freeze/snow pass (`canBlockFreezeWater`
-/ `canSnowAt` write ice/snow). None of those are ported: `decoration_parity` gates
-`BiomeGenBase.decorate` only. They must land before the full Gate-C chunk (blocks + metadata + biome +
-heightmap) can match. P0's remaining items still need a running binary.
+**Recommended next: close the residual full-chunk gaps and claim Gate C.** All six structure
+generators have **layout + block placement** parity, and the rest of `populate` now lands:
+`WorldGenLakes` (water + lava), `WorldGenDungeons`, `SpawnerAnimals.performWorldGenSpawning` is
+entities-only (no block writes; its draws come after `decorate`, with nothing later reading `rand`,
+so it is skipped) and the freeze/snow pass (`canBlockFreezeWater` / `canSnowAt` write ice/snow).
+`TerrainGen::populate_chunk` runs the four covering passes' structures → lakes → dungeons → decorate
+→ freeze on one shared world and one per-pass `Random`, gated by `populate_parity`. Remaining gaps
+(see "Open threads"): the deferred `onBlockAdded` effects (a non-remote oracle drops unsupported
+mineshaft torches), the pre-existing decoration coverage gap (a lava-spring/cascade fixture), and a
+1-block ore-edge case. P0's remaining items still need a running binary.
 
 1. **`worldgen_seed` — M1 (in progress).** `mc-core::jmath` + `math_parity` done; base terrain done;
    caves + ravines done (`cave.rs` + `caves_parity`); canonical chunk artefacts done (`chunk.rs` +
@@ -231,10 +244,13 @@ heightmap) can match. P0's remaining items still need a running binary.
    placement** done (`structure/netherbridge_placement.rs` +
    `nether_placement_parity`); **village block placement** done (`structure/village_placement.rs` +
    `village_placement_parity`); **stronghold block placement** done
-   (`structure/stronghold_placement.rs` + `stronghold_placement_parity`). **All six structure
-   generators now have layout + block placement parity**; remaining for the full chunk: the `populate`
-   lake / dungeon / freeze-snow stages. Then the full chunk (blocks + metadata + biome + heightmap) for
-   the Gate-C seeds/chunks is reachable and `worldgen_parity` can take the Gate-C name.
+   (`structure/stronghold_placement.rs` + `stronghold_placement_parity`); **all `populate` stages** now ported (`populate.rs`: water/lava
+   `WorldGenLakes`, `WorldGenDungeons`, the freeze/snow pass) and composed into
+   `TerrainGen::populate_chunk` (one world + one per-pass `Random`), gated by `populate_parity`
+   (7 chunks x 3 seeds, blocks + biome + heightmap). Remaining for Gate C: the residual gaps above
+   (`onBlockAdded`, a decoration coverage fixture, a 1-block ore edge). Then the full chunk (blocks +
+   metadata + biome + heightmap) for the Gate-C seeds/chunks is reachable and `worldgen_parity` can
+   take the Gate-C name.
    *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
    and chunks.
 
@@ -578,6 +594,30 @@ heightmap) can match. P0's remaining items still need a running binary.
   cascades into neighbouring static lava - a block-update cascade (cf. mineshaft `onBlockAdded`) - so
   both the `springs` and `full` corpora keep that fixture (seed -7 chunk (-48,-48)) out until the
   block-update subsystem (`tick_parity`) exists.
+- **`populate` stages + full driver (session 32):** `mc-worldgen::populate` ports `WorldGenLakes`
+  (water + lava), `WorldGenDungeons` and the freeze/snow pass. `TerrainGen::populate_chunk` runs the
+  four covering passes in `ChunkProviderGenerate.populate`'s order on **one** shared world and
+  **one** per-pass `Random`: structures (mineshaft → village → stronghold → temple → monument) →
+  water lake → lava lake → dungeons → `BiomeGenBase.decorate` → freeze/snow. `ChunkWorld` now wraps
+  `DecorateWorld` so the structure and decoration stages share block + light + biome state.
+  `populate_parity` (`PopulateOracle.java` + `populate_probe.rs`) uses a non-remote headless world
+  (so `breakBlock` matches) with `checkLight`/`checkLightFor` disabled; the 3x3 is generated with
+  `isChunkLoaded = false` (Voronoi structure registration) and populates with it true (stored biome
+  array). `SpawnerAnimals.performWorldGenSpawning` is skipped (entities only; its draws are after
+  `decorate`, so no block effect). **Residual gaps:** (1) `onBlockAdded` is not ported and the
+  oracle is non-remote, so a mineshaft torch vanilla drops (`BlockTorch.checkForDrop`) is written by
+  the port (1 block at seed 12345 (-48,-48)); (2) the pre-existing decoration coverage gap (a
+  lava-spring/cascade fixture) shows as a large diff on seed 0 (3,47); (3) seed 0/12345 (512,512)
+  and seed -7 (100,-50) have a **1-block ore-edge** diff (granite vs stone) that is still open (the
+  dungeon empty-range bug was one large diff, fixed - see the session log). The corpus keeps the
+  exact chunks (8 x 3 seeds); the excluded chunks are listed here rather than silently dropped.
+- **`math_parity` / `SIN_TABLE` (session 32):** the table was built with Rust's `f64::sin`, which on
+  this target mis-reduces exactly at `PI` (returns 1.2246064e-16 vs Java fdlibm's 1.2246469e-16).
+  Only index 32768 differed; `MathHelper.sin` lookups near `PI` (the `WorldGenMinable` ellipsoid at
+  `t -> 1`) flipped one ore cell. `mc-core::jmath` now pins that entry and `math_parity` compares an
+  FNV-1a hash of the **whole** 65536-entry `MathHelper.SIN_TABLE` (read from the game by reflection),
+  not just the 200 sampled values. (The sin table was a latent bug, not the cause of the residual
+  1-block ore diff above.)
 - **Verify tooling (decided):** `tools/_parity_cache.py` caches both the Java oracle stdout (source +
   jar + argv + env) and the Rust probe stdout (example binary + argv + env); `tools/parity.py`
   prebuilds examples once, runs harnesses in a bounded pool, and runs decoration first on cold runs
@@ -1102,3 +1142,5 @@ heightmap) can match. P0's remaining items still need a running binary.
   `theBiomeDecorator`/`GRASS_COLOR_NOISE` are per-JVM statics shared by all worlds, so modes would
   leak generator state (`mushroomType`, `BigTree.heightLimit`) and no longer match the fresh-process
   Rust probe; it needs explicit state resets + re-validation for a cold-only ~30 s gain. 18/18 green.
+
+- **2026-11-27 - session 32 (populate lakes/dungeons/freeze + full driver; sin-table fix).** Ported the rest of `ChunkProviderGenerate.populate` into `crates/mc-worldgen/src/populate.rs`: `WorldGenLakes` (water + lava, shell validation, grass/mycelium, lava stone shell, water ice pass), `WorldGenDungeons` (room carve, mossy/cobble selector, two chests with the book + `DUNGEON_CHEST_CONTENT` + 8 stacks, the spawner name draw) and the freeze/snow pass (`canBlockFreezeWater`/`canSnowAt` incl. `getFloatTemperature`'s altitude/temperature-noise correction). Extended `DecorateWorld` with the stored generation biome array, `biome_at`/`temperature_at` and the freeze predicates, and made `ChunkWorld` wrap `DecorateWorld` so structure placement and the decorate/lake/dungeon/freeze stages share block + light + biome state. Added `TerrainGen::populate_chunk` - the four covering passes' structures (mineshaft -> village -> stronghold -> temple -> monument) -> water lake -> lava lake -> dungeons -> decorate -> freeze on one shared world and one per-pass `Random` (`SpawnerAnimals` skipped: entities only). New harness `populate_parity` (`PopulateOracle.java` + `populate_probe.rs` + `tools/test_populate_parity.py`): **6,216 lines / 8 chunks x 3 seeds** (blocks + biome + heightmap). Clippy also caught a real bug in the new dungeon port: `(3..=-1).rev()` is an empty range, so the room carve loop never ran; fixing it to `(-1..=3).rev()` turned a 2,019-block diff on seed -7 (-53,-16) into an exact match. **Found a real latent math bug:** Rust's `f64::sin` mis-reduces exactly at `PI` (only `SIN_TABLE[32768]` differs from Java fdlibm), flipping a `WorldGenMinable` ellipsoid edge; `jmath` pins that entry and `math_parity` now hashes the **whole** 65,536-entry table (read from the game by reflection) - 493 lines. **Residual full-chunk gaps (documented in Open threads):** non-remote `onBlockAdded` drops a mineshaft torch the port writes (seed 12345 (-48,-48)); the pre-existing lava-spring/cascade decoration gap (seed 0 (3,47)); a 1-block ore edge on a few chunks (seed 0/12345 (512,512), seed -7 (100,-50)). 14 mc-core + 112 mc-worldgen + 10 mc-perf = **136 tests**. `verify.ps1`: **19/19**. **Next:** close the three residual gaps, then claim Gate C.
