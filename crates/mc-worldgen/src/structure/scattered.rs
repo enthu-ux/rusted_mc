@@ -15,8 +15,9 @@
 //!   (`Voronoi`) layer at the block coordinate `(chunk*16 + 8)`. This module is handed a biome lookup
 //!   closure so it does not depend on the layer internals.
 //!
-//! Block placement lives in `structure/placement.rs`: the swamp hut is ported; the desert and jungle
-//! pyramids are still layout-only.
+//! Block placement lives in `structure/placement.rs`: the swamp hut and the desert and jungle
+//! pyramids are ported (the jungle pyramid's mid-body chest draw makes its chunk placement
+//! order-dependent in vanilla; see `temple_placement_parity`).
 
 use std::collections::BTreeMap;
 

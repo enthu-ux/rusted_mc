@@ -17,6 +17,7 @@
 
 pub mod mineshaft;
 pub mod monument;
+pub mod monument_placement;
 pub mod netherbridge;
 pub mod placement;
 pub mod scattered;

@@ -16,10 +16,12 @@ use crate::layer::BiomeLayers;
 use crate::noise::{Octaves, Perlin};
 use crate::structure::mineshaft::Mineshaft;
 use crate::structure::monument::OceanMonument;
+use crate::structure::monument_placement;
 use crate::structure::placement::{self, ChunkWorld};
 use crate::structure::scattered::ScatteredFeature;
 use crate::structure::stronghold::Stronghold;
 use crate::structure::village::Village;
+use crate::structure::PieceKind;
 use mc_core::random::JavaRandom;
 use std::f64::consts::PI;
 
@@ -768,8 +770,51 @@ impl TerrainGen {
         world.chunk_blocks(chunk_x, chunk_z).to_vec()
     }
 
-    /// `ChunkProviderGenerate.populate`'s decoration: the target chunk's blocks after the four
-    /// covering `BiomeDecorator.decorate` passes (the `+8`-offset window, see `crate::decorate`).
+    /// `ChunkProviderGenerate.populate`'s ocean-monument passes for one chunk: the target chunk's
+    /// blocks after the four covering populate passes write the building (room graph included).
+    ///
+    /// Same `+8` driver shape as the other structures. `MonumentBuilding` rebuilds its room graph
+    /// deterministically from `(seed, start chunk)`; the passes use a fixed order and corpora keep
+    /// order-independent fixtures.
+    pub fn populate_monument_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Vec<u16> {
+        let mut world = ChunkWorld::new();
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let chunk = self.generate_chunk(chunk_x + dx, chunk_z + dz, GenOptions::vanilla());
+                world.insert_chunk(chunk_x + dx, chunk_z + dz, chunk.blocks);
+            }
+        }
+
+        for a in [chunk_x - 1, chunk_x] {
+            for b in [chunk_z - 1, chunk_z] {
+                let mut rand = placement::populate_rand(self.seed, a, b);
+                let bbox = placement::structure_box(a, b);
+                for start in self.monuments.starts_intersecting(a, b) {
+                    for piece in &start.pieces {
+                        if matches!(piece.kind, PieceKind::MonumentBuilding)
+                            && piece.bbox.intersects_with(&bbox)
+                        {
+                            let facing = piece
+                                .coord_base_mode
+                                .unwrap_or(crate::structure::Facing::North);
+                            monument_placement::monument_building_parts(
+                                &mut world,
+                                &bbox,
+                                &mut rand,
+                                self.seed,
+                                start.chunk_x,
+                                start.chunk_z,
+                                piece.bbox,
+                                facing,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        world.chunk_blocks(chunk_x, chunk_z).to_vec()
+    }
     ///
     /// Vanilla's pass order is chunk-load order; the port uses a fixed order
     /// ((cx-1,cz-1), (cx-1,cz), (cx,cz-1), (cx,cz)) and corpora keep order-independent fixtures.

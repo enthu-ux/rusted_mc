@@ -7,19 +7,24 @@ spanning two chunks per axis) covers the target chunk - and compares the target 
 against the Rust probe (`crates/mc-worldgen/examples/temple_probe.rs`,
 `TerrainGen::populate_scattered_chunk`).
 
-Currently only the **swamp hut** has block placement; the desert and jungle pyramids are layout-only,
-so the corpus is limited to swamp-hut chunks (the harness grows as those are ported).
+Covers the swamp hut, the desert pyramid and the jungle pyramid. The desert/jungle pyramids differ:
+the desert's chest rolls happen after all its block writes, so its chunk is order-independent; the
+jungle pyramid's main-chest `generateChestContents` runs *before* later writes, so its book draw
+shifts the following stone-selector draws - the chunk is genuinely order-dependent in vanilla (the
+real order is chunk-load order). Our port commits to a fixed pass order, so the jungle is compared
+against the oracle run in that same order; only the order-independent fixtures also require
+forward==reverse.
 
 Format per chunk: `seed <seed> chunk <cx> <cz>`, then 256 lines `x z v0 ... v255`
 (`vi = blockId * 16 + metadata`).
 
 Scope/guards:
-  - **order-independent**: a temple's `func_74935_a` offsets its box on the first placement pass
-    (state carries across passes), so the corpus must give the same chunk with the passes reversed
-    (`TEMPLE_REVERSE`).
+  - **order-independence**: for the order-independent fixtures a temple's `func_74935_a` offsets its
+    box on the first placement pass (state carries across passes), so the corpus must give the same
+    chunk with the passes reversed (`TEMPLE_REVERSE`). The jungle fixture is exempt (see above).
   - **no `onBlockAdded` effects**: `Chunk.setBlockState` calls `Block.onBlockAdded`; block-update
     side effects are outside the placement port, so the corpus keeps fixtures that do not trigger
-    them.
+    them (the jungle's dispensers/tripwire/redstone happen to be no-ops here).
   - **signal**: at least one structure block across the corpus.
 
 Outputs are cached under .local/temple/.
@@ -38,16 +43,23 @@ SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "temple"
 ORACLE_CLASSES = WORK / "oracle-classes"
 
-# Swamp-hut origins (their own chunk): seed 0 (3,47), seed 12345 (-26,49); desert pyramid: seed -7 (4,2).
-CORPUS = {
-    "0": [(3, 47)],
-    "12345": [(-26, 49)],
-    "-7": [(4, 2)],
-}
+# Temple origins (their own chunk): swamp hut seed 0 (3,47), seed 12345 (-26,49); desert pyramid
+# seed -7 (4,2); jungle pyramid seed 12345 (72,-155). Each entry: (seed, chunks, order_independent).
+CORPUS = [
+    ("0", [(3, 47)], True),
+    ("12345", [(-26, 49)], True),
+    ("-7", [(4, 2)], True),
+    ("12345", [(72, -155)], False),
+]
 # Swamp-hut blocks (`planks`, `log`, `oak_fence`, `flower_pot`, `crafting_table`, `cauldron`,
-# `spruce_stairs`) + desert-pyramid signatures (`sandstone_stairs`, stained hardened clay,
-# `stone_slab`, `stone_pressure_plate`, `tnt`, `chest`).
-STRUCTURE_BLOCKS = {5, 17, 85, 140, 58, 118, 134, 128, 159, 44, 70, 46, 54}
+# `spruce_stairs`), desert-pyramid signatures (`sandstone_stairs`, stained hardened clay,
+# `stone_slab`, `stone_pressure_plate`, `tnt`, `chest`), and the jungle-pyramid set (`cobblestone`,
+# `mossy_cobblestone`, `stone_stairs`, `tripwire_hook`, `tripwire`, `redstone_wire`, `vine`,
+# `stonebrick`, `lever`, `sticky_piston`, `unpowered_repeater`, `dispenser`).
+STRUCTURE_BLOCKS = {
+    5, 17, 85, 140, 58, 118, 134, 128, 159, 44, 70, 46, 54,
+    4, 48, 67, 131, 132, 55, 106, 98, 69, 29, 93, 23,
+}
 
 
 def find_cargo() -> str:
@@ -131,15 +143,16 @@ def main() -> int:
     total_lines = 0
     total_chunks = 0
     blocks = 0
-    for seed, chunks in CORPUS.items():
+    for seed, chunks, order_independent in CORPUS:
         try:
             vanilla = oracle(seed, chunks, reverse=False)
-            reversed_out = oracle(seed, chunks, reverse=True)
+            if order_independent:
+                reversed_out = oracle(seed, chunks, reverse=True)
         except RuntimeError as e:
             print(e)
             return 2
 
-        if vanilla != reversed_out:
+        if order_independent and vanilla != reversed_out:
             print(f"FIXTURE ERROR: seed {seed}: the corpus is order-dependent (forward vs reverse)")
             return 1
 
@@ -152,8 +165,12 @@ def main() -> int:
             return 2
         rust = r.stdout
 
-        (WORK / f"vanilla-{seed}.txt").write_text(vanilla, encoding="utf-8")
-        (WORK / f"rust-{seed}.txt").write_text(rust, encoding="utf-8")
+        (WORK / f"vanilla-{seed}-{chunks[0][0]}_{chunks[0][1]}.txt").write_text(
+            vanilla, encoding="utf-8"
+        )
+        (WORK / f"rust-{seed}-{chunks[0][0]}_{chunks[0][1]}.txt").write_text(
+            rust, encoding="utf-8"
+        )
 
         problem = first_mismatch(vanilla, rust)
         if problem is not None:
@@ -170,7 +187,7 @@ def main() -> int:
         return 1
 
     print(
-        f"OK: {total_lines} lines match ({len(CORPUS)} seeds x {total_chunks} chunks, "
+        f"OK: {total_lines} lines match ({len(CORPUS)} fixtures x {total_chunks} chunks, "
         f"{blocks} structure blocks)"
     )
     return 0

@@ -135,6 +135,12 @@ pub mod chest {
         content(ItemStackSpec::new(419, 0, 1), 1, 1, 1),  // diamond_horse_armor
     ];
 
+    /// `ComponentScatteredFeaturePieces.JunglePyramid.field_175815_j`: the tripwire dispensers'
+    /// payload (`Items.arrow`, 2..=7, weight 30). `TileEntityDispenser` has 9 slots.
+    pub const JUNGLE_DISPENSER_CONTENT: [ChestContent; 1] = [
+        content(ItemStackSpec::new(262, 0, 64), 2, 7, 30), // arrow
+    ];
+
     /// `WeightedRandomChestContent.func_177629_a`: a new list of `base` followed by `extra`.
     pub fn with_extra(base: &[ChestContent], extra: ChestContent) -> Vec<ChestContent> {
         let mut list = base.to_vec();
