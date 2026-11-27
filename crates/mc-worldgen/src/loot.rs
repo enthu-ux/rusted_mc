@@ -141,6 +141,90 @@ pub mod chest {
         content(ItemStackSpec::new(262, 0, 64), 2, 7, 30), // arrow
     ];
 
+    /// `StructureNetherBridgePieces.Piece.field_111019_a` (12 entries, total weight 75). The
+    /// fortress corridor chest list; `generateChestContents` fills a 27-slot `TileEntityChest`.
+    /// Item ids/max stack sizes from `Item.registerItems()` and the obsidian block item.
+    pub const NETHER_BRIDGE_CHEST_CONTENT: [ChestContent; 12] = [
+        content(ItemStackSpec::new(264, 0, 64), 1, 3, 5), // diamond
+        content(ItemStackSpec::new(265, 0, 64), 1, 5, 5), // iron_ingot
+        content(ItemStackSpec::new(266, 0, 64), 1, 3, 15), // gold_ingot
+        content(ItemStackSpec::new(283, 0, 1), 1, 1, 5),  // golden_sword
+        content(ItemStackSpec::new(315, 0, 1), 1, 1, 5),  // golden_chestplate
+        content(ItemStackSpec::new(259, 0, 1), 1, 1, 5),  // flint_and_steel
+        content(ItemStackSpec::new(372, 0, 64), 3, 7, 5), // nether_wart
+        content(ItemStackSpec::new(329, 0, 1), 1, 1, 10), // saddle
+        content(ItemStackSpec::new(418, 0, 1), 1, 1, 8),  // golden_horse_armor
+        content(ItemStackSpec::new(417, 0, 1), 1, 1, 5),  // iron_horse_armor
+        content(ItemStackSpec::new(419, 0, 1), 1, 1, 3),  // diamond_horse_armor
+        content(ItemStackSpec::new(49, 0, 64), 2, 4, 2),  // obsidian (block item)
+    ];
+
+    /// `StructureVillagePieces.House2.villageBlacksmithChestContents` (17 entries, total weight
+    /// 100). The blacksmith chest; `generateChestContents` fills a 27-slot `TileEntityChest`.
+    pub const VILLAGE_BLACKSMITH_CHEST_CONTENT: [ChestContent; 17] = [
+        content(ItemStackSpec::new(264, 0, 64), 1, 3, 3), // diamond
+        content(ItemStackSpec::new(265, 0, 64), 1, 5, 10), // iron_ingot
+        content(ItemStackSpec::new(266, 0, 64), 1, 3, 5), // gold_ingot
+        content(ItemStackSpec::new(297, 0, 64), 1, 3, 15), // bread
+        content(ItemStackSpec::new(260, 0, 64), 1, 3, 15), // apple
+        content(ItemStackSpec::new(257, 0, 1), 1, 1, 5),  // iron_pickaxe
+        content(ItemStackSpec::new(267, 0, 1), 1, 1, 5),  // iron_sword
+        content(ItemStackSpec::new(307, 0, 1), 1, 1, 5),  // iron_chestplate
+        content(ItemStackSpec::new(306, 0, 1), 1, 1, 5),  // iron_helmet
+        content(ItemStackSpec::new(308, 0, 1), 1, 1, 5),  // iron_leggings
+        content(ItemStackSpec::new(309, 0, 1), 1, 1, 5),  // iron_boots
+        content(ItemStackSpec::new(49, 0, 64), 3, 7, 5),  // obsidian (block item)
+        content(ItemStackSpec::new(6, 0, 64), 3, 7, 5),   // sapling (block item)
+        content(ItemStackSpec::new(329, 0, 1), 1, 1, 3),  // saddle
+        content(ItemStackSpec::new(417, 0, 1), 1, 1, 1),  // iron_horse_armor
+        content(ItemStackSpec::new(418, 0, 1), 1, 1, 1),  // golden_horse_armor
+        content(ItemStackSpec::new(419, 0, 1), 1, 1, 1),  // diamond_horse_armor
+    ];
+
+    /// `StructureStrongholdPieces.ChestCorridor.strongholdChestContents` (18 entries, total
+    /// weight 100).
+    pub const STRONGHOLD_CHEST_CONTENT: [ChestContent; 18] = [
+        content(ItemStackSpec::new(368, 0, 16), 1, 1, 10), // ender_pearl
+        content(ItemStackSpec::new(264, 0, 64), 1, 3, 3),  // diamond
+        content(ItemStackSpec::new(265, 0, 64), 1, 5, 10), // iron_ingot
+        content(ItemStackSpec::new(266, 0, 64), 1, 3, 5),  // gold_ingot
+        content(ItemStackSpec::new(331, 0, 64), 4, 9, 5),  // redstone
+        content(ItemStackSpec::new(297, 0, 64), 1, 3, 15), // bread
+        content(ItemStackSpec::new(260, 0, 64), 1, 3, 15), // apple
+        content(ItemStackSpec::new(257, 0, 1), 1, 1, 5),   // iron_pickaxe
+        content(ItemStackSpec::new(267, 0, 1), 1, 1, 5),   // iron_sword
+        content(ItemStackSpec::new(307, 0, 1), 1, 1, 5),   // iron_chestplate
+        content(ItemStackSpec::new(306, 0, 1), 1, 1, 5),   // iron_helmet
+        content(ItemStackSpec::new(308, 0, 1), 1, 1, 5),   // iron_leggings
+        content(ItemStackSpec::new(309, 0, 1), 1, 1, 5),   // iron_boots
+        content(ItemStackSpec::new(322, 0, 64), 1, 1, 1),  // golden_apple
+        content(ItemStackSpec::new(329, 0, 1), 1, 1, 1),   // saddle
+        content(ItemStackSpec::new(417, 0, 1), 1, 1, 1),   // iron_horse_armor
+        content(ItemStackSpec::new(418, 0, 1), 1, 1, 1),   // golden_horse_armor
+        content(ItemStackSpec::new(419, 0, 1), 1, 1, 1),   // diamond_horse_armor
+    ];
+
+    /// `StructureStrongholdPieces.Library.strongholdLibraryChestContents` (4 entries, total
+    /// weight 42).
+    pub const STRONGHOLD_LIBRARY_CHEST_CONTENT: [ChestContent; 4] = [
+        content(ItemStackSpec::new(340, 0, 64), 1, 3, 20), // book
+        content(ItemStackSpec::new(339, 0, 64), 2, 7, 20), // paper
+        content(ItemStackSpec::new(395, 0, 1), 1, 1, 1),   // map
+        content(ItemStackSpec::new(345, 0, 1), 1, 1, 1),   // compass
+    ];
+
+    /// `StructureStrongholdPieces.RoomCrossing.strongholdRoomCrossingChestContents` (7 entries,
+    /// total weight 61).
+    pub const STRONGHOLD_ROOM_CROSSING_CHEST_CONTENT: [ChestContent; 7] = [
+        content(ItemStackSpec::new(265, 0, 64), 1, 5, 10), // iron_ingot
+        content(ItemStackSpec::new(266, 0, 64), 1, 3, 5),  // gold_ingot
+        content(ItemStackSpec::new(331, 0, 64), 4, 9, 5),  // redstone
+        content(ItemStackSpec::new(263, 0, 64), 3, 8, 10), // coal
+        content(ItemStackSpec::new(297, 0, 64), 1, 3, 15), // bread
+        content(ItemStackSpec::new(260, 0, 64), 1, 3, 15), // apple
+        content(ItemStackSpec::new(257, 0, 1), 1, 1, 1),   // iron_pickaxe
+    ];
+
     /// `WeightedRandomChestContent.func_177629_a`: a new list of `base` followed by `extra`.
     pub fn with_extra(base: &[ChestContent], extra: ChestContent) -> Vec<ChestContent> {
         let mut list = base.to_vec();
@@ -191,8 +275,19 @@ pub mod chest {
     /// book (level 30, enchantability 1) and wraps it as a single-item chest entry. The enchantment
     /// draws happen here, before the chest rolls.
     pub fn enchanted_book_content(rand: &mut JavaRandom) -> ChestContent {
+        enchanted_book_content_with(rand, 1, 1, 1)
+    }
+
+    /// `ItemEnchantedBook.getRandom(rand, min, max, weight)`: the same enchantment draw, but the
+    /// resulting chest entry can appear `min..=max` times with `weight` (the library chests).
+    pub fn enchanted_book_content_with(
+        rand: &mut JavaRandom,
+        min_size: i32,
+        max_size: i32,
+        weight: i32,
+    ) -> ChestContent {
         let _ = super::enchant::add_random_enchantment(rand, 30);
-        content(ENCHANTED_BOOK, 1, 1, 1)
+        content(ENCHANTED_BOOK, min_size, max_size, weight)
     }
 }
 

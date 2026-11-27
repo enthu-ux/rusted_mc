@@ -815,6 +815,71 @@ impl TerrainGen {
 
         world.chunk_blocks(chunk_x, chunk_z).to_vec()
     }
+
+    /// `ChunkProviderGenerate.populate`'s village passes for one chunk: the target chunk's blocks
+    /// after the four covering populate passes write their village pieces.
+    ///
+    /// Same `+8` driver shape as the other structures. A piece caches its `HPos` (average ground
+    /// level) on the first pass that meets it, so the passes run in a fixed order
+    /// ((cx-1,cz-1), (cx-1,cz), (cx,cz-1), (cx,cz)); vanilla's is chunk-load order, and corpora
+    /// either keep order-independent fixtures or compare against the oracle in this same order.
+    pub fn populate_village_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Vec<u16> {
+        let mut world = ChunkWorld::new();
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let chunk = self.generate_chunk(chunk_x + dx, chunk_z + dz, GenOptions::vanilla());
+                world.insert_chunk(chunk_x + dx, chunk_z + dz, chunk.blocks);
+            }
+        }
+
+        for a in [chunk_x - 1, chunk_x] {
+            for b in [chunk_z - 1, chunk_z] {
+                let mut rand = placement::populate_rand(self.seed, a, b);
+                let bbox = placement::structure_box(a, b);
+                let x0 = (a << 4) + 8;
+                let z0 = (b << 4) + 8;
+                self.village
+                    .for_each_start_meeting_mut(x0, z0, x0 + 15, z0 + 15, |start| {
+                        placement::generate_structure(start, &mut world, &mut rand, &bbox);
+                    });
+            }
+        }
+
+        world.chunk_blocks(chunk_x, chunk_z).to_vec()
+    }
+
+    /// `ChunkProviderGenerate.populate`'s stronghold passes for one chunk: the target chunk's
+    /// blocks after the four covering populate passes write their stronghold pieces.
+    ///
+    /// Same `+8` driver shape as the other structures. Stronghold pieces are large and underground,
+    /// so a body can start with `isLiquidInStructureBoundingBox` and return false (the piece is
+    /// dropped); state (chest/portal-room flags, dropped pieces) carries across the fixed pass order
+    /// ((cx-1,cz-1), (cx-1,cz), (cx,cz-1), (cx,cz)).
+    pub fn populate_stronghold_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Vec<u16> {
+        let mut world = ChunkWorld::new();
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let chunk = self.generate_chunk(chunk_x + dx, chunk_z + dz, GenOptions::vanilla());
+                world.insert_chunk(chunk_x + dx, chunk_z + dz, chunk.blocks);
+            }
+        }
+
+        for a in [chunk_x - 1, chunk_x] {
+            for b in [chunk_z - 1, chunk_z] {
+                let mut rand = placement::populate_rand(self.seed, a, b);
+                let bbox = placement::structure_box(a, b);
+                let x0 = (a << 4) + 8;
+                let z0 = (b << 4) + 8;
+                self.stronghold
+                    .for_each_start_meeting_mut(x0, z0, x0 + 15, z0 + 15, |start| {
+                        placement::generate_structure(start, &mut world, &mut rand, &bbox);
+                    });
+            }
+        }
+
+        world.chunk_blocks(chunk_x, chunk_z).to_vec()
+    }
+
     ///
     /// Vanilla's pass order is chunk-load order; the port uses a fixed order
     /// ((cx-1,cz-1), (cx-1,cz), (cx,cz-1), (cx,cz)) and corpora keep order-independent fixtures.

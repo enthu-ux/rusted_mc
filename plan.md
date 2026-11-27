@@ -180,25 +180,28 @@ Version-agnostic and directly address "don't reinvent the wheel":
 - Dump blocks + metadata + biome + heightmap canonically; hash.
 - **Pass:** `python tools/parity.py worldgen_seed` exits 0, **0 mismatched chunks**; on failure, names the **first differing block coordinate**.
 
-**Staged.** All six structure layouts are ported and **decoration is complete** (`decoration_parity`
-gates ores, surface, vegetation, trees, springs and the per-biome `decorate` overrides via its `full`
-mode); it changes blocks, so the Gate-C name stays reserved for the final chunk. The pieces that exist
-are pinned separately:
+**Staged.** All six structure layouts are ported and the **biome decoration** is complete
+(`decoration_parity` gates ores, surface, vegetation, trees, springs and the per-biome `decorate`
+overrides via its `full` mode); it changes blocks, so the Gate-C name stays reserved for the final
+chunk. **Note (session 28):** the full `ChunkProviderGenerate.populate` also runs water/lava lakes
+(`WorldGenLakes`), `WorldGenDungeons`, `SpawnerAnimals.performWorldGenSpawning` (entities only) and the
+freeze/snow pass; those are **not** ported yet, so "decoration complete" means `BiomeGenBase.decorate`,
+not the whole populate. The pieces that exist are pinned separately:
 `worldgen_parity`
 (`tools/test_worldgen_parity.py`) covers blocks + metadata + biome + heightmap for the
 **pre-decoration** `provideChunk` output on these seeds/chunks (plus cave/ravine/mesa/ocean
 fixtures), and `structures_parity` covers the structure *layout* registered during `provideChunk`
 (starts, pieces, bounding boxes) for mineshafts, scattered features (temples/huts), ocean monuments,
 nether fortresses, villages and strongholds. Structure *blocks* are written in `populate`: the
-mineshaft half is
-now ported (`mineshaft_placement_parity`) together with the RNG its chests consume (`loot_parity`:
-`WeightedRandomChestContent` + `EnchantmentHelper.buildEnchantmentList`); all six structure layouts
-are now ported, so the remaining work for Gate C is **structure block placement** for the
-nether fortress, village and stronghold (the mineshaft, swamp hut, desert/jungle pyramids and ocean
-monument are done; `temple_placement_parity`/`monument_placement_parity` gate the temples/monument).
-(Vanilla's `onBlockAdded`
-block-update consequences - rail reshaping, torch support - are outside the placement port; see
-`handoff.md`.)
+mineshaft half is ported (`mineshaft_placement_parity`) together with the RNG its chests consume
+(`loot_parity`: `WeightedRandomChestContent` + `EnchantmentHelper.buildEnchantmentList`); all six
+structure layouts are ported, and mineshaft, swamp hut, desert/jungle pyramid, ocean monument, nether
+fortress, village and stronghold block placement are done (`mineshaft_placement_parity`,
+`temple_placement_parity`, `monument_placement_parity`, `nether_placement_parity`,
+`village_placement_parity`, `stronghold_placement_parity`). Remaining for Gate C: the
+**lake / dungeon / freeze-snow `populate` stages**. (Vanilla's
+`onBlockAdded` block-update consequences - rail reshaping, torch support - are outside the placement
+port; see `handoff.md`.)
 
 ## 12. Risks & Mitigations
 
@@ -346,6 +349,9 @@ All under `vendor/minecraft/1.8.9/` unless noted. Pinned in `vendor/minecraft/1.
 | Mineshaft block placement | `crates/mc-worldgen/src/structure/placement.rs` + `tools/test_mineshaft_placement_parity.py` (+ `MineshaftPlacementOracle.java`) | ✅ `mineshaft_placement_parity` green: 3,598 lines match (3 seeds x 14 chunks, 426 structure blocks; curated corpus - see `handoff.md`) |
 | Temple block placement (swamp hut + desert pyramid + jungle pyramid) | `crates/mc-worldgen/src/structure/placement.rs` + `tools/test_temple_placement_parity.py` (+ `TemplePlacementOracle.java`) | ✅ `temple_placement_parity` green: 1,028 lines match (4 fixtures x 4 chunks, 1,562 structure blocks; the jungle chunk is order-dependent - see `handoff.md`) |
 | Ocean-monument block placement | `crates/mc-worldgen/src/structure/monument_placement.rs` + `tools/test_monument_placement_parity.py` (+ `MonumentPlacementOracle.java`) | ✅ `monument_placement_parity` green: 771 lines match (3 seeds x 3 chunks, 7,518 structure blocks) |
+| Nether-fortress block placement | `crates/mc-worldgen/src/structure/netherbridge_placement.rs` + `tools/test_nether_placement_parity.py` (+ `NetherPlacementOracle.java`) | ✅ `nether_placement_parity` green: 1,542 lines match (3 seeds x 6 chunks, 10,531 structure blocks; synthetic base + `hellRNG` replay pinned over 48 draws - see `handoff.md`) |
+| Village block placement | `crates/mc-worldgen/src/structure/village_placement.rs` + `tools/test_village_placement_parity.py` (+ `VillagePlacementOracle.java`) | ✅ `village_placement_parity` green: 1,542 lines match (4 fixtures x 6 chunks, 2,059 structure blocks; all pieces incl. the desert substitution; one fixture is `HPos`-order-dependent - see `handoff.md`) |
+| Stronghold block placement | `crates/mc-worldgen/src/structure/stronghold_placement.rs` + `tools/test_stronghold_placement_parity.py` (+ `StrongholdPlacementOracle.java`) | ✅ `stronghold_placement_parity` green: 2,313 lines match (3 seeds x 9 chunks, 8,430 structure blocks; all reachable pieces, the `Stones` selector, the liquid-drop path and the end-portal frames) |
 | Decoration (all layers + per-biome overrides) | `crates/mc-worldgen/src/decorate.rs` + `decorate/blocks.rs` + `decorate/trees.rs` + `tools/test_decoration_parity.py` (+ `DecorationOracle.java`) | ✅ `decoration_parity` green: 32,896 lines match (7 modes x 3 seeds: ores, surface, plants, trees, springs, ore_surface, `full` = real `BiomeGenBase.decorate` incl. double plants/melon/vines/ice/boulders/emerald/monster-egg/desert wells) |
 | Java HashMap order | `crates/mc-core/src/jhash.rs` + `tools/test_jhash_parity.py` (+ `HashOrderOracle.java`) | ✅ `jhash_parity` green: 16 insertion orders / 301 keys match `keySet()` order (unblocks chest-enchantment RNG) |
 | Block table | `oracle/java/src/BlockTableOracle.java` → `chunk::light_opacity` | ✅ dumped from the live game (opacity per block id + material-air set) |

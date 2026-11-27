@@ -92,7 +92,7 @@ impl ChunkWorld {
 
     /// `World.getBlockState` at absolute coordinates. Air outside the build height or a missing
     /// chunk (vanilla generates on demand; the driver supplies every reachable chunk).
-    fn get(&self, x: i32, y: i32, z: i32) -> u16 {
+    pub(crate) fn get(&self, x: i32, y: i32, z: i32) -> u16 {
         if !(0..256).contains(&y) {
             return 0;
         }
@@ -104,7 +104,7 @@ impl ChunkWorld {
 
     /// `World.setBlockState` at absolute coordinates (drops writes to a missing chunk, which the
     /// driver prevents).
-    fn set(&mut self, x: i32, y: i32, z: i32, value: u16) {
+    pub(crate) fn set(&mut self, x: i32, y: i32, z: i32, value: u16) {
         if !(0..256).contains(&y) {
             return;
         }
@@ -331,7 +331,7 @@ impl Component {
     /// `func_175805_a`: like `fillWithBlocks`, but each position is written with probability
     /// `prob` (`rand.nextFloat() <= prob`).
     #[allow(clippy::too_many_arguments)]
-    fn fill_with_random_blocks(
+    pub(crate) fn fill_with_random_blocks(
         &self,
         world: &mut ChunkWorld,
         chunk: &BoundingBox,
@@ -374,7 +374,7 @@ impl Component {
     /// `BlockSelector` (`selectBlocks(rand, x, y, z, edge)`), which for the jungle pyramid's `Stones`
     /// draws one `nextFloat()` per position.
     #[allow(clippy::too_many_arguments)]
-    fn fill_with_randomized_blocks(
+    pub(crate) fn fill_with_randomized_blocks(
         &self,
         world: &mut ChunkWorld,
         chunk: &BoundingBox,
@@ -407,7 +407,7 @@ impl Component {
 
     /// `randomlyPlaceBlock`.
     #[allow(clippy::too_many_arguments)]
-    fn randomly_place_block(
+    pub(crate) fn randomly_place_block(
         &self,
         world: &mut ChunkWorld,
         chunk: &BoundingBox,
@@ -493,7 +493,7 @@ impl Component {
 }
 
 /// `getMetadataWithOffset` for the stair blocks (`stone/oak/nether_brick/stone_brick/sandstone`).
-fn stairs_meta_with_offset(facing: Option<Facing>, meta: i32) -> i32 {
+pub(crate) fn stairs_meta_with_offset(facing: Option<Facing>, meta: i32) -> i32 {
     match facing {
         Some(Facing::South) => match meta {
             2 => 3,
@@ -518,9 +518,50 @@ fn stairs_meta_with_offset(facing: Option<Facing>, meta: i32) -> i32 {
     }
 }
 
+/// `getMetadataWithOffset` for `Blocks.ladder` (the `BlockLadder` branch uses full facing indices).
+pub(crate) fn ladder_meta_with_offset(facing: Option<Facing>, index: i32) -> i32 {
+    match facing {
+        Some(Facing::South) => match index {
+            2 => Facing::South.index(),
+            3 => Facing::North.index(),
+            m => m,
+        },
+        Some(Facing::West) => match index {
+            2 => Facing::West.index(),
+            3 => Facing::East.index(),
+            4 => Facing::North.index(),
+            5 => Facing::South.index(),
+            m => m,
+        },
+        Some(Facing::East) => match index {
+            2 => Facing::East.index(),
+            3 => Facing::West.index(),
+            4 => Facing::North.index(),
+            5 => Facing::South.index(),
+            m => m,
+        },
+        _ => index,
+    }
+}
+
+/// `getMetadataWithOffset` for `BlockDoor`: the input is a horizontal index, output a horizontal
+/// index (`EnumFacing.getHorizontal(..)` is then applied by the caller).
+pub(crate) fn door_meta_with_offset(facing: Option<Facing>, index: i32) -> i32 {
+    match facing {
+        Some(Facing::South) => match index {
+            0 => 2,
+            2 => 0,
+            m => m,
+        },
+        Some(Facing::West) => (index + 1) & 3,
+        Some(Facing::East) => (index + 3) & 3,
+        _ => index,
+    }
+}
+
 /// `EnumFacing.getHorizontal(meta)`: the horizontal index -> facing (SOUTH 0, WEST 1, NORTH 2,
 /// EAST 3, i.e. `getHorizontalIndex`'s order).
-fn facing_from_horizontal(index: i32) -> Facing {
+pub(crate) fn facing_from_horizontal(index: i32) -> Facing {
     match index & 3 {
         0 => Facing::South,
         1 => Facing::West,
@@ -579,6 +620,32 @@ fn directional_index_with_offset(facing: Option<Facing>, index: i32) -> i32 {
             4 => Facing::North.index(),
             5 => Facing::South.index(),
             _ => index,
+        },
+        _ => index,
+    }
+}
+
+/// `getMetadataWithOffset` for `Blocks.stone_button` (full facing indices).
+pub(crate) fn stone_button_meta_with_offset(facing: Option<Facing>, index: i32) -> i32 {
+    match facing {
+        Some(Facing::South) => match index {
+            3 => 4,
+            4 => 3,
+            m => m,
+        },
+        Some(Facing::West) => match index {
+            3 => 1,
+            4 => 2,
+            2 => 3,
+            1 => 4,
+            m => m,
+        },
+        Some(Facing::East) => match index {
+            3 => 2,
+            4 => 1,
+            2 => 3,
+            1 => 4,
+            m => m,
         },
         _ => index,
     }
@@ -661,6 +728,13 @@ pub fn add_component_parts(
     {
         return false;
     }
+    // A village piece caches `HPos` (the average ground level) on its first placement pass and
+    // offsets its box then; later passes reuse the stored value.
+    if matches!(&piece.kind, PieceKind::Village(_))
+        && !crate::structure::village_placement::village_adjust_height(piece, world, chunk)
+    {
+        return true;
+    }
     let comp = Component::new(piece);
     match &mut piece.kind {
         PieceKind::MineshaftCorridor {
@@ -709,12 +783,27 @@ pub fn add_component_parts(
         // Monument block placement is not ported yet (registration/layout only). Nothing reaches
         // this arm today: `populate` only walks the registered mineshafts.
         PieceKind::MonumentBuilding => true,
-        // Nether-fortress block placement is not ported yet (registration/layout only).
-        PieceKind::Nether { .. } => true,
-        // Village block placement is not ported yet (registration/layout only).
-        PieceKind::Village(_) => true,
-        // Stronghold block placement is not ported yet (registration/layout only).
-        PieceKind::Stronghold(_) => true,
+        PieceKind::Nether {
+            kind,
+            chest,
+            seed,
+            has_spawner,
+        } => crate::structure::netherbridge_placement::nether_parts(
+            &comp,
+            world,
+            rand,
+            chunk,
+            *kind,
+            chest,
+            *seed,
+            has_spawner,
+        ),
+        PieceKind::Village(v) => {
+            crate::structure::village_placement::village_parts(&comp, world, rand, chunk, v)
+        }
+        PieceKind::Stronghold(s) => {
+            crate::structure::stronghold_placement::stronghold_parts(&comp, world, rand, chunk, s)
+        }
     }
 }
 
@@ -1879,7 +1968,7 @@ fn jungle_pyramid(
 }
 
 /// `BlockChest.correctFacing` -> the chest's facing-index metadata.
-fn chest_facing_meta(world: &ChunkWorld, x: i32, y: i32, z: i32) -> u16 {
+pub(crate) fn chest_facing_meta(world: &ChunkWorld, x: i32, y: i32, z: i32) -> u16 {
     const CHEST: i32 = 54;
     let mut selected: Option<Facing> = None;
     for f in [Facing::North, Facing::East, Facing::South, Facing::West] {
@@ -1919,7 +2008,7 @@ fn chest_facing_meta(world: &ChunkWorld, x: i32, y: i32, z: i32) -> u16 {
 /// `StructureComponent.generateChestContents` for a temple: place a (facing-corrected) chest and roll
 /// its loot. `TileEntityChest` has 27 slots; the drawn stacks are discarded (the dump is blocks only).
 #[allow(clippy::too_many_arguments)]
-fn temple_chest(
+pub(crate) fn temple_chest(
     comp: &Component,
     world: &mut ChunkWorld,
     rand: &mut JavaRandom,

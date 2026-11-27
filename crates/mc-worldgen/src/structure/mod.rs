@@ -19,10 +19,13 @@ pub mod mineshaft;
 pub mod monument;
 pub mod monument_placement;
 pub mod netherbridge;
+pub mod netherbridge_placement;
 pub mod placement;
 pub mod scattered;
 pub mod stronghold;
+pub mod stronghold_placement;
 pub mod village;
+pub mod village_placement;
 
 use mc_core::random::JavaRandom;
 
@@ -75,6 +78,16 @@ impl Facing {
             Facing::East => Facing::South,
             Facing::South => Facing::West,
             Facing::West => Facing::North,
+        }
+    }
+
+    /// `EnumFacing.rotateYCCW()` (counter-clockwise seen from above).
+    pub fn rotate_y_ccw(self) -> Facing {
+        match self {
+            Facing::North => Facing::West,
+            Facing::West => Facing::South,
+            Facing::South => Facing::East,
+            Facing::East => Facing::North,
         }
     }
 

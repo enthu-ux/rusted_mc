@@ -14,12 +14,23 @@
 //! Vanilla quirk replicated: when a child lands outside the 112-block window, `func_175870_a` builds
 //! an `End` piece purely for its RNG draw and *discards* it (it is never added to the components).
 //!
-//! Block placement is not ported yet (layout only).
+//! **Placement RNG.** Unlike the overworld generators, `ChunkProviderHell.populate` reuses the
+//! provider's shared `hellRNG`; `provideChunk` re-seeds it with
+//! `chunkX * 341873128712 + chunkZ * 132897987541` and `func_180516_b` advances it by a fixed
+//! pattern (3 `nextDouble` per column, then two conditionally-short-circuited `nextInt(5)` per
+//! y-level), independent of the terrain it writes. [`hell_populate_rand`] replays that pattern, so
+//! each populate pass uses the same RNG state as if that chunk had just been generated. Vanilla's
+//! actual state also depends on chunk-load history (a chunk already in memory is not re-seeded), so
+//! placement corpora use the canonical generate-then-populate sequence - the same scoping choice as
+//! the mineshaft `structureMap` order note.
+//!
+//! Block placement lives in [`super::netherbridge_placement`].
 
 use std::collections::BTreeMap;
 
 use mc_core::random::JavaRandom;
 
+use super::placement::{self, ChunkWorld};
 use super::{
     component_box, find_intersecting, BoundingBox, Facing, NetherKind, Piece, PieceKind,
     StructureStart,
@@ -185,10 +196,74 @@ impl NetherBridge {
             .collect()
     }
 
+    /// Mutable access to every registered start whose box meets the X/Z region (the
+    /// `MapGenStructure.generateStructure` walk). Mutation matters: a corridor's `Chest` flag and a
+    /// throne's `Mob` flag carry across the passes that cover a chunk.
+    pub fn for_each_start_meeting_mut<F: FnMut(&mut StructureStart)>(
+        &mut self,
+        x0: i32,
+        z0: i32,
+        x1: i32,
+        z1: i32,
+        mut visit: F,
+    ) {
+        for start in self.starts.values_mut() {
+            if start.bbox.intersects_with_xz(x0, z0, x1, z1) {
+                visit(start);
+            }
+        }
+    }
+
+    /// The four covering `MapGenStructure.generateStructure` passes for one chunk, each with the
+    /// `hellRNG` state it would have after that pass chunk's `provideChunk` (`hell_populate_rand`).
+    /// The caller supplies the `world` (a synthetic nether base in the harness).
+    pub fn populate_chunk(&mut self, world: &mut ChunkWorld, chunk_x: i32, chunk_z: i32) {
+        for a in [chunk_x - 1, chunk_x] {
+            for b in [chunk_z - 1, chunk_z] {
+                let mut rand = hell_populate_rand(a, b);
+                let bbox = placement::structure_box(a, b);
+                let x0 = (a << 4) + 8;
+                let z0 = (b << 4) + 8;
+                self.for_each_start_meeting_mut(x0, z0, x0 + 15, z0 + 15, |start| {
+                    placement::generate_structure(start, world, &mut rand, &bbox);
+                });
+            }
+        }
+    }
+
     /// `MapGenStructure.structureMap` size (for tests/diagnostics).
     pub fn start_count(&self) -> usize {
         self.starts.len()
     }
+}
+
+/// The `hellRNG` state at `ChunkProviderHell.populate` for chunk `(cx, cz)`: `provideChunk` seeds
+/// `Random(cx * 341873128712 + cz * 132897987541)` and `func_180516_b` advances it by a fixed
+/// pattern that does not depend on the terrain:
+///
+/// - per column (z outer, x inner): `nextDouble` (soul sand), `nextDouble` (gravel),
+///   `nextDouble` (netherrack exclusivity);
+/// - per y `127..=0`: `nextInt(5)` always, then a second `nextInt(5)` only when the first comparison
+///   `y < 127 - d1` is true (`&&` short-circuits).
+pub fn hell_populate_rand(chunk_x: i32, chunk_z: i32) -> JavaRandom {
+    let seed = (chunk_x as i64)
+        .wrapping_mul(341873128712)
+        .wrapping_add((chunk_z as i64).wrapping_mul(132897987541));
+    let mut rand = JavaRandom::new(seed);
+    for _z in 0..16 {
+        for _x in 0..16 {
+            rand.next_double();
+            rand.next_double();
+            rand.next_double();
+            for y in (0..=127).rev() {
+                let d1 = rand.next_int_bound(5);
+                if y < 127 - d1 {
+                    rand.next_int_bound(5);
+                }
+            }
+        }
+    }
+    rand
 }
 
 /// `EnumFacing.Plane.HORIZONTAL.facings()` is `{NORTH, EAST, SOUTH, WEST}`.

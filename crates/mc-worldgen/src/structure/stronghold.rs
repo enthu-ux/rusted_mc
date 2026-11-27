@@ -14,7 +14,7 @@
 //! Vanilla quirk replicated: the `RightTurn` weight dispatches through `LeftTurn.func_175867_a`, which
 //! constructs a **`LeftTurn`** (so `RightTurn` pieces are never produced).
 //!
-//! Block placement is not ported yet (layout only).
+//! Block placement lives in [`super::stronghold_placement`] (`TerrainGen::populate_stronghold_chunk`).
 
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
@@ -116,6 +116,24 @@ impl Stronghold {
             .filter(|s| s.intersects_chunk(chunk_x, chunk_z))
             .cloned()
             .collect()
+    }
+
+    /// Mutable access to every registered start whose box meets the X/Z region (the
+    /// `MapGenStructure.generateStructure` walk). Mutation matters: a chest's `Chest` flag, the
+    /// portal room's `Mob` flag and dropped pieces carry across the passes.
+    pub fn for_each_start_meeting_mut<F: FnMut(&mut StructureStart)>(
+        &mut self,
+        x0: i32,
+        z0: i32,
+        x1: i32,
+        z1: i32,
+        mut visit: F,
+    ) {
+        for start in self.starts.values_mut() {
+            if start.bbox.intersects_with_xz(x0, z0, x1, z1) {
+                visit(start);
+            }
+        }
     }
 
     /// `MapGenStructure.structureMap` size (for tests/diagnostics).

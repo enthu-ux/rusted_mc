@@ -14,7 +14,7 @@
 //! `field_74932_i` (buildings), roads first. A start is `isSizeableStructure` only when it has more
 //! than two non-road pieces.
 //!
-//! Block placement is not ported yet (layout only).
+//! Block placement lives in [`super::village_placement`] (`TerrainGen::populate_village_chunk`).
 
 use std::collections::BTreeMap;
 
@@ -94,6 +94,24 @@ impl Village {
             .filter(|s| s.sizeable && s.intersects_chunk(chunk_x, chunk_z))
             .cloned()
             .collect()
+    }
+
+    /// Mutable access to every *sizeable* registered start whose box meets the X/Z region (the
+    /// `MapGenStructure.generateStructure` walk). Mutation matters: a piece's `HPos` (average ground
+    /// level) is cached on its first placement pass.
+    pub fn for_each_start_meeting_mut<F: FnMut(&mut StructureStart)>(
+        &mut self,
+        x0: i32,
+        z0: i32,
+        x1: i32,
+        z1: i32,
+        mut visit: F,
+    ) {
+        for start in self.starts.values_mut() {
+            if start.sizeable && start.bbox.intersects_with_xz(x0, z0, x1, z1) {
+                visit(start);
+            }
+        }
     }
 
     /// `MapGenStructure.structureMap` size (for tests/diagnostics).

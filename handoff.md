@@ -23,10 +23,15 @@ commit/push.
   `java.util.HashMap` order, the loot + enchantment RNG, mineshaft **block placement** (the
   `populate` half; a curated corpus), **all of decoration** (layers 1-4 + the per-biome `decorate`
   overrides), the **swamp hut + desert pyramid + jungle pyramid block placement** (the
-  scattered-feature `populate` half), and the **ocean monument block placement** (shell + room graph).
-- **Next increment:** the nether fortress's block placement, then the village and stronghold; then the
-  full Gate-C chunk.
-- **Baseline:** `scripts/verify.ps1` -> **15/15** harnesses, **130** unit tests, fmt clean.
+  scattered-feature `populate` half), the **ocean monument block placement** (shell + room graph), the
+  **nether fortress block placement** (all 14 piece bodies, on a synthetic nether base), the
+  **village block placement** (all 12 piece bodies, `HPos` caching and the desert substitution), and
+  the **stronghold block placement** (all reachable pieces, the `Stones` selector, the liquid-drop
+  path and the end-portal frames).
+- **Next increment:** the remaining `populate` pieces the Gate-C chunk still needs (water/lava lakes,
+  dungeons, the freeze/snow pass; see below), then the full Gate-C chunk. **All six structures now
+  have both layout and block placement parity.**
+- **Baseline:** `scripts/verify.ps1` -> **18/18** harnesses, **135** unit tests, fmt clean.
 
 ---
 
@@ -58,15 +63,19 @@ py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
 ```
 
-Expected today: `cargo test` and `fmt` pass (130 unit tests); `py tools/parity.py` reports
-`15/15 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
+Expected today: `cargo test` and `fmt` pass (135 unit tests); `py tools/parity.py` reports
+`18/18 passed` (`random_parity` 3,848 lines; `noise_parity` 1,047; `noise_batch_parity` 369;
 `biome_layer_parity` 4,626; `terrain_parity` 16,191; `math_parity` 492; `caves_parity` 46,260;
 `worldgen_parity` 7,770; `structures_parity` 10,533 lines / 96 starts (mineshaft + scattered feature +
 monument + nether fortress + village + stronghold); `jhash_parity` 16 orders / 301 keys;
 `loot_parity` 25 enchantments / 28 cases = 695 lines; `mineshaft_placement_parity` 14 chunks = 3,598 lines;
 `temple_placement_parity` 4 fixtures = 1,028 lines, 1,562 blocks (swamp hut + desert pyramid + jungle
 pyramid); `monument_placement_parity` 3 seeds = 771 lines, 7,518 blocks (ocean monument);
-`decoration_parity` 7 modes x 3 seeds = 32,896 lines, all decoration incl. the per-biome overrides).
+`decoration_parity` 7 modes x 3 seeds = 32,896 lines, all decoration incl. the per-biome overrides;
+`nether_placement_parity` 6 chunks = 1,542 lines, 10,531 blocks (nether fortress, synthetic base;
+the `hellRNG` replay is pinned separately - 48 draws); `village_placement_parity` 6 chunks = 1,542
+lines, 2,059 blocks (all village pieces incl. the desert substitution); `stronghold_placement_parity`
+9 chunks = 2,313 lines, 8,430 blocks (all reachable pieces + the liquid-drop path)).
 
 `tools/perf_baseline.py` is **manual** (not part of `verify`): it builds release binaries, runs the
 Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `MC_SPANS=1`,
@@ -94,7 +103,7 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 - **Inputs:** done. Official 1.8.9 jars (hash-checked), clean vanilla decompile (0 Forge refs),
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
-- **Workspace:** 11 crates; `cargo test` + `fmt` green (13/13 harnesses, 110 tests).
+- **Workspace:** 11 crates; `cargo test` + `fmt` green (18/18 harnesses, 135 tests).
 - **Performance (P0 substrate done):** `docs/performance-contract.md` + `docs/performance-baselines.md`;
   `mc-perf` (zero-dep: opt-in spans, `Stats`, `work::par_chunks_mut`, `alloc::CountingAllocator`) +
   `tools/perf_baseline.py`; spans on the worldgen hot path. First baseline: Rust base terrain
@@ -131,7 +140,13 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   driven by `TerrainGen::populate_mineshaft_chunk` / `populate_scattered_chunk`; `mc-worldgen::structure::monument_placement`
   (the `MonumentBuilding` shell helpers, base pillars, water walls, the room-graph rebuild from
   `(seed, start chunk)`, and the `Entry/Core/Simple/SimpleTop/Double*` and `Wing/Penthouse` room bodies),
-  driven by `TerrainGen::populate_monument_chunk`; `mc-worldgen::decorate` (**all decoration layers incl. the per-biome `decorate` overrides**: the
+  driven by `TerrainGen::populate_monument_chunk`; `mc-worldgen::structure::netherbridge_placement`
+  (all 14 `StructureNetherBridgePieces` `addComponentParts` bodies, driven by
+  `NetherBridge::populate_chunk` with the `hellRNG` replay); `mc-worldgen::structure::village_placement`
+  (all 12 `StructureVillagePieces` bodies, the `HPos` cache and the `func_175847_a` desert
+  substitution, driven by `TerrainGen::populate_village_chunk`); `mc-worldgen::structure::stronghold_placement`
+  (all reachable `StructureStrongholdPieces` bodies, the `Stones` selector, the liquid-drop path and
+  the end-portal frames, driven by `TerrainGen::populate_stronghold_chunk`); `mc-worldgen::decorate` (**all decoration layers incl. the per-biome `decorate` overrides**: the
   `DecorateWorld`/`Chunk` block + height-map + column-skylight shim, `ChunkProviderSettings` defaults,
   `WorldGenMinable` ore generation, the surface `WorldGenSand`/`WorldGenClay`/gravel loops, the
   vegetation generators, the tree generators incl. the `genBigTreeChance` hooks and the tree
@@ -156,8 +171,11 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   RNG), `mineshaft_placement_parity` (mineshaft block placement), `temple_placement_parity` (swamp-hut
   + desert-pyramid + jungle-pyramid block placement), `monument_placement_parity` (ocean-monument block
   placement), `decoration_parity` (all decoration:
-  ores, surface, vegetation, trees, springs, the full chunk with the per-biome overrides).
-  Unit tests: 107 `mc-worldgen`, 13 `mc-core`, 10 `mc-perf`.
+  ores, surface, vegetation, trees, springs, the full chunk with the per-biome overrides),
+  `nether_placement_parity` (nether fortress blocks, synthetic base), `village_placement_parity`
+  (all village pieces incl. the desert substitution), `stronghold_placement_parity` (all reachable
+  pieces + the liquid-drop path).
+  Unit tests: 112 `mc-worldgen`, 13 `mc-core`, 10 `mc-perf`.
 - Notable vanilla quirks encoded: `GenLayerHills.field_151628_d` unseeded top Zooms; Mesa cache
   `Random(0)` + `func_150619_a` orange-loop `+2` step; `ChunkPrimer` x/z transposition in
   `generateBiomeTerrain`; caves and ravines reach biomes through the **biome cache** (index
@@ -170,14 +188,15 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
 
 ## Next steps (prioritized, each with a pass condition)
 
-**Recommended next: the remaining structure block placement** (the nether fortress, then the village
-and stronghold). The generic `+8` populate driver and the
-`StructureComponent` helpers are shared; the swamp hut + desert/jungle pyramids and the ocean monument
-are ported and their harnesses (`temple_placement_parity`/`monument_placement_parity`) are the
-templates. Decoration is complete and parity-gated
-end-to-end (`decoration_parity`'s `full` mode). With all structure placement done, the full Gate-C
-chunk (blocks + metadata + biome + heightmap) is reachable and `worldgen_parity` can take the Gate-C
-name. P0's remaining items need a running binary.
+**Recommended next: close the `populate` gap below**, then assemble the full Gate-C chunk. All six
+structure generators now have **layout + block placement** parity: mineshaft, swamp hut +
+desert/jungle pyramids, ocean monument, nether fortress, village and stronghold; their harnesses are
+the templates. **Gate-C gap found in session 28:** the full `ChunkProviderGenerate.populate` also runs
+`WorldGenLakes` (water + lava), `WorldGenDungeons`, `SpawnerAnimals.performWorldGenSpawning` (entities
+only - no block writes, but it draws RNG after `decorate`) and the freeze/snow pass (`canBlockFreezeWater`
+/ `canSnowAt` write ice/snow). None of those are ported: `decoration_parity` gates
+`BiomeGenBase.decorate` only. They must land before the full Gate-C chunk (blocks + metadata + biome +
+heightmap) can match. P0's remaining items still need a running binary.
 
 1. **`worldgen_seed` — M1 (in progress).** `mc-core::jmath` + `math_parity` done; base terrain done;
    caves + ravines done (`cave.rs` + `caves_parity`); canonical chunk artefacts done (`chunk.rs` +
@@ -192,10 +211,14 @@ name. P0's remaining items need a running binary.
    `decoration_parity`, incl. the per-biome `decorate` overrides in the `full` mode); **swamp hut +
    desert pyramid + jungle pyramid block placement** done (`structure/placement.rs` +
    `temple_placement_parity`); **ocean monument block placement** done
-   (`structure/monument_placement.rs` + `monument_placement_parity`). All six structure layouts are
-   ported; remaining: **block placement** for
-   the nether fortress, village and stronghold. Then the full chunk (blocks + metadata + biome + heightmap) for the Gate-C
-   seeds/chunks is reachable and `worldgen_parity` can take the Gate-C name.
+   (`structure/monument_placement.rs` + `monument_placement_parity`); **nether fortress block
+   placement** done (`structure/netherbridge_placement.rs` +
+   `nether_placement_parity`); **village block placement** done (`structure/village_placement.rs` +
+   `village_placement_parity`); **stronghold block placement** done
+   (`structure/stronghold_placement.rs` + `stronghold_placement_parity`). **All six structure
+   generators now have layout + block placement parity**; remaining for the full chunk: the `populate`
+   lake / dungeon / freeze-snow stages. Then the full chunk (blocks + metadata + biome + heightmap) for
+   the Gate-C seeds/chunks is reachable and `worldgen_parity` can take the Gate-C name.
    *Done when:* the full chunk (blocks + metadata + biome + heightmap) matches for the Gate-C seeds
    and chunks.
 
@@ -393,7 +416,17 @@ name. P0's remaining items need a running binary.
   weighted pick, `End` fallback); vanilla quirk replicated: a child outside the 112-block window builds
   an `End` purely for its RNG draw and discards it. The root's pending list is drained in random order,
   then `StructureStart::set_random_height(48, 70)` drops the structure. All 15 piece kinds are
-  exercised; block placement is still unported.
+  exercised. **Block placement** is `structure::netherbridge_placement` (all 14 bodies; `Start`
+  reuses `Crossing3`'s), gated by `nether_placement_parity` (3 seeds x 6 chunks, 10,531 blocks).
+  Two scope notes: (1) the nether terrain is unported, so both sides use a **synthetic base**
+  (bedrock y=0, netherrack y=1..39, air above) - the nether bodies never call
+  `isLiquidInStructureBoundingBox`, so the base only affects `replaceAirAndLiquidDownwards`;
+  (2) `ChunkProviderHell.populate` reuses the shared `hellRNG` (not a fresh per-chunk `Random`), so
+  `hell_populate_rand` replays `provideChunk`'s fixed draw pattern (3 `nextDouble` per column, then
+  two short-circuited `nextInt(5)` per y) without terrain; vanilla's real state also depends on
+  chunk-load history, so the corpus uses the canonical generate-then-populate sequence (the same
+  scoping choice as the mineshaft `structureMap` order). `Entrance`'s `forceBlockUpdateTick(flowing_lava)`
+  is block-update semantics - the port writes the lava and the oracle neutralises the tick.
 - **Villages (ported):** `mc-worldgen::structure::village`. Grid-placed by
   `World.setRandomSeed(gx, gz, 10387312)` + `areBiomesViable(.., 0, {plains, desert, savanna})`. The
   layout is `StructureVillagePieces`: a `Start` (a `Well`) draws the weighted piece list, four roads
@@ -401,8 +434,18 @@ name. P0's remaining items need a running binary.
   is gated by `areBiomesViable` around its centre (a rejected piece still consumes its RNG draws).
   Two lists are drained in random order (roads then buildings); `StructureStart::sizeable` mirrors
   `isSizeableStructure` (a start needs > 2 non-road pieces). 12/13 piece kinds are exercised (only
-  `Well`/`ViW` is unreachable - villages only create the `Start`, which extends `Well`); block
-  placement is still unported.
+  `Well`/`ViW` is unreachable - villages only create the `Start`, which extends `Well`).
+  **Block placement** is `structure::village_placement` (all 12 bodies; `Start` reuses `Well`'s),
+  gated by `village_placement_parity` (4 fixtures x 6 chunks, 2,059 blocks; includes the desert
+  village, which exercises `func_175847_a`: log/cobblestone/planks/gravel -> sandstone, stairs ->
+  sandstone stairs). Two details: (1) a piece caches `HPos` (average ground level, `seaLevel + 1` =
+  64) on the first pass that meets it and offsets its box then, so placement can be order-dependent;
+  the port uses a fixed pass order and one fixture compares against the oracle in that order (the
+  other three require forward==reverse); (2) the oracle's `TestWorld` is a **remote** world, so
+  `Chunk.setBlockState` skips `onBlockAdded` (torch support, furnace facing, chest facing) and
+  neighbour notifications are no-ops - block-update semantics are outside the placement port.
+  `ItemDoor.placeDoor`'s hinge/neighbour reads are modelled; the door's upper/lower meta is written
+  directly.
 - **Strongholds (ported):** `mc-worldgen::structure::stronghold`. Placement is a lazily computed
   3-position ring: `Random(worldSeed)` -> `(1.25*spread + nextDouble()) * 32*spread` at 120° steps, each
   refined by `WorldChunkManager.findBiomePosition(.., 112, {biomes with minHeight > 0}, rand)`; the
@@ -412,7 +455,15 @@ name. P0's remaining items need a running binary.
   exists; `StructureStart::mark_available_height(10)` drops it under sea level. Every piece serializes
   `EntryDoor` (all four door kinds exercised). Vanilla quirk replicated: the `RightTurn` weight
   dispatches through `LeftTurn.func_175867_a`, which builds a **`LeftTurn`** (so `SHRT` is never
-  produced). All reachable piece kinds are exercised; block placement is still unported.
+  produced). All reachable piece kinds are exercised. **Block placement** is
+  `structure::stronghold_placement` (all reachable bodies; `Stairs2` reuses `Stairs`), gated by
+  `stronghold_placement_parity` (3 seeds x 9 chunks, 8,430 blocks, forward==reverse). Details: the
+  `Stones` selector draws one `nextFloat` per edge position (cracked/mossy/monster-egg/plain) and
+  turns interior positions to air; every body except `PortalRoom` starts with
+  `isLiquidInStructureBoundingBox` (real vanilla behavior for an underground structure - a `true`
+  drops the piece); `PortalRoom` draws one `nextFloat` per end-portal frame and places the silverfish
+  spawner; the `placeDoor` helper covers all four `EntryDoor` kinds (its simplified door states are
+  written directly, not via `ItemDoor`). The oracle is a remote world (no `onBlockAdded`).
   **Caveat:** the ring uses Java `Math.cos`/`Math.sin` (fdlibm); the port uses Rust's `f64::cos`/`sin`,
   which is exact for the corpus (a 1-ULP difference could only flip a `round` at an exact `.5`
   boundary).
@@ -947,3 +998,55 @@ name. P0's remaining items need a running binary.
   fit loop re-fits it as an extra `DoubleZ`. Final: **771 lines / 7,518 structure blocks** (3 seeds x 3
   chunks, order-independent). 4 new unit tests (**107 `mc-worldgen`**, 130 total). `verify.ps1`:
   **15/15**. **Next:** the nether fortress, village, stronghold, then the Gate-C chunk.
+- **2026-11-27 - session 28 (structure block placement: nether fortress).** Added
+  `structure/netherbridge_placement.rs`: all 14 `StructureNetherBridgePieces.addComponentParts` bodies
+  (`Straight`, `Crossing3`/`Start`, `Crossing`, `Stairs`, `Throne`, `Entrance`, `Corridor5`,
+  `Crossing2`, `Corridor2`, `Corridor`, `Corridor3`, `Corridor4`, `NetherStalkRoom`, `End`), the
+  12-entry `NETHER_BRIDGE_CHEST_CONTENT` list, the blaze spawner (Throne) and the flowing-lava
+  entrance. Added `NetherBridge::populate_chunk` + `for_each_start_meeting_mut` and
+  `hell_populate_rand`, which replays `ChunkProviderHell.provideChunk`'s `func_180516_b` draws so the
+  fortress `populate` RNG does not need nether terrain. New harness `nether_placement_parity`
+  (`NetherPlacementOracle.java` + `examples/nether_probe.rs` + `tools/test_nether_placement_parity.py`)
+  over a **synthetic base** shared by both sides: **1,542 lines / 10,531 structure blocks** (3 seeds x
+  6 chunks, forward==reverse), plus the `hellRNG` replay pinned directly (48 draws - the block dump
+  cannot see this stream, since only chest contents draw from it). 1 unit test (**108 `mc-worldgen`**,
+  131 total). `verify.ps1`: **16/16**.
+  **Scope:** `Entrance`'s `forceBlockUpdateTick(flowing_lava)` is block-update semantics (the oracle
+  neutralises it); vanilla's `hellRNG` also depends on chunk-load history, so corpora use the
+  canonical generate-then-populate sequence. **Found during handoff:** the full
+  `ChunkProviderGenerate.populate` still needs `WorldGenLakes` (water/lava), `WorldGenDungeons`, the
+  freeze/snow pass and `SpawnerAnimals.performWorldGenSpawning` (entities only) - `decoration_parity`
+  covers `BiomeGenBase.decorate` only. **Next:** village + stronghold placement, then the
+  lake/dungeon/snow `populate` stages, then the Gate-C chunk.
+- **2026-11-27 - session 29 (structure block placement: village).** Added
+  `structure/village_placement.rs`: the shared `Village` base (`func_175847_a` desert substitution,
+  `getAverageGroundLevel`/`HPos`, `canVillageGoDeeper`, the `setBlockState`/`fillWithBlocks`/
+  `replaceAirAndLiquidDownwards` overrides) plus all 12 bodies (`Well`/`Start`, `Church`, `Field1`,
+  `Field2`, `Hall`, `House1`, `House2`, `House3`, `House4Garden`, `WoodHut`, `Torch`, `Path`). Added
+  `VILLAGE_BLACKSMITH_CHEST_CONTENT` (17 entries), door placement (`ItemDoor.placeDoor` hinge +
+  upper/lower meta), the torch/ladder metadata mappings, `TerrainGen::populate_village_chunk` and
+  `Village::for_each_start_meeting_mut`. New harness `village_placement_parity`
+  (`VillagePlacementOracle.java` + `examples/village_probe.rs` + `tools/test_village_placement_parity.py`):
+  **1,542 lines / 2,059 structure blocks** (4 fixtures x 6 chunks; the desert village exercises the
+  substitution). The oracle is a **remote** world (skips `onBlockAdded`/neighbour updates - block
+  updates are out of scope). 2 unit tests (**110 `mc-worldgen`**, 133 total). `verify.ps1`: **17/17**.
+  **Bugs the harness caught:** fields use still water (id 9), not flowing; torch meta is the custom
+  E=1/W=2/S=3/N=4 mapping; white wool is meta 15. **Scope:** a piece caches `HPos` on its first pass,
+  so one fixture is order-dependent (the port uses a fixed order, the oracle run the same way; the
+  other three require forward==reverse). **Next:** stronghold placement, then the lake/dungeon/snow
+  `populate` stages, then the Gate-C chunk.
+- **2026-11-27 - session 30 (structure block placement: stronghold - all six structures done).** Added
+  `structure/stronghold_placement.rs`: the shared `Stronghold` base (`placeDoor` for all four
+  `EntryDoor` kinds) and the `Stones` selector, plus `ChestCorridor`, `Corridor`, `Crossing`,
+  `LeftTurn`, `Library`, `PortalRoom`, `Prison`, `RightTurn`, `RoomCrossing`, `Stairs` (`Stairs2`
+  reuses it), `StairsStraight` and `Straight`. Added the three stronghold chest lists (18/4/7
+  entries) + `enchanted_book_content_with` (the library book's 1..5 range), the `stone_button`
+  metadata mapping, `TerrainGen::populate_stronghold_chunk` and
+  `Stronghold::for_each_start_meeting_mut`. New harness `stronghold_placement_parity`
+  (`StrongholdPlacementOracle.java` + `examples/stronghold_probe.rs` +
+  `tools/test_stronghold_placement_parity.py`): **2,313 lines / 8,430 structure blocks** (3 seeds x 9
+  chunks, forward==reverse), covering the `Stones` selector, all four doors, the end-portal frames
+  (12 `nextFloat`), the chests and the liquid-drop path. **Bug the harness caught:** monster egg
+  `BlockSilverfish.EnumType.STONEBRICK` is meta **2**, not 0. 2 unit tests (**112 `mc-worldgen`**,
+  135 total). `verify.ps1`: **18/18**. **All six structure generators now have layout + block
+  placement parity.** **Next:** the lake/dungeon/freeze-snow `populate` stages, then the Gate-C chunk.
