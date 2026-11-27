@@ -32,7 +32,7 @@ commit/push.
   dungeons, the freeze/snow pass; see below), then the full Gate-C chunk. **All six structures now
   have both layout and block placement parity.**
 - **Baseline:** `scripts/verify.ps1` -> **18/18** harnesses, **135** unit tests, fmt clean (~7 s
-  warm, ~5 min cold with `-Fresh`).
+  warm, ~4.6 min cold with `-Fresh`).
 
 ---
 
@@ -111,13 +111,15 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   `vendor/minecraft/`, `vendor/reference/`, `vendor/tools/jdk21|w64devkit|*.jar|*.zip|*.exe`,
   `target/`, `.local/`, `logs/`. Push a session's work with `git add -A && git commit -m ... && git push`.
 - **Verify:** `scripts/verify.ps1` runs tests + format + all parity harnesses in one command (cached
-  oracles + a bounded parallel pool; `-Fresh` for a cold run, `-Jobs N` to cap workers).
+  oracles + probes + a bounded parallel pool; `-Fresh` for a cold run, `-Jobs N` to cap workers).
 
 ## Current state
 
 - **Inputs:** done. Official 1.8.9 jars (hash-checked), clean vanilla decompile (0 Forge refs),
   MCP `stable_22`, protocol/block/item data (`vendor/reference/minecraft-data`).
 - **Workspace:** 11 crates; `cargo test` + `fmt` green (18/18 harnesses, 135 tests).
+  `scripts/verify.ps1` is **~7 s warm / ~4.6 min cold** via cached oracle+probe output and a bounded
+  runner (`-Fresh`, `-Jobs N`).
 - **Performance (P0 substrate done):** `docs/performance-contract.md` + `docs/performance-baselines.md`;
   `mc-perf` (zero-dep: opt-in spans, `Stats`, `work::par_chunks_mut`, `alloc::CountingAllocator`) +
   `tools/perf_baseline.py`; spans on the worldgen hot path. First baseline: Rust base terrain
@@ -576,6 +578,14 @@ heightmap) can match. P0's remaining items still need a running binary.
   cascades into neighbouring static lava - a block-update cascade (cf. mineshaft `onBlockAdded`) - so
   both the `springs` and `full` corpora keep that fixture (seed -7 chunk (-48,-48)) out until the
   block-update subsystem (`tick_parity`) exists.
+- **Verify tooling (decided):** `tools/_parity_cache.py` caches both the Java oracle stdout (source +
+  jar + argv + env) and the Rust probe stdout (example binary + argv + env); `tools/parity.py`
+  prebuilds examples once, runs harnesses in a bounded pool, and runs decoration first on cold runs
+  (its 21 seed/mode pairs fan out). **Rejected:** collapsing decoration's 21 JVMs to 3 (one per
+  seed) - `BiomeGenBase.theBiomeDecorator`/`GRASS_COLOR_NOISE` are per-JVM statics shared across
+  worlds, so modes would leak generator state (`mushroomType`, `BigTree.heightLimit`) and stop
+  matching the fresh-process Rust probe; it would need explicit resets + re-validation for a
+  cold-only gain. User declined.
 
 ## Session log (append-only)
 
