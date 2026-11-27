@@ -14,11 +14,13 @@ import pathlib
 import subprocess
 import sys
 
+from _parity_cache import Oracle
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "TerrainOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "terrain"
-ORACLE_CLASSES = WORK / "oracle-classes"
+ORACLE = Oracle("terrain", ORACLE_SRC, "TerrainOracle", work=WORK, jar=SERVER_JAR)
 SEEDS = ["0", "12345", "-7"]
 
 
@@ -42,21 +44,14 @@ def main() -> int:
         return 3
 
     WORK.mkdir(parents=True, exist_ok=True)
-    ORACLE_CLASSES.mkdir(parents=True, exist_ok=True)
 
-    r = run(["javac", "-cp", str(SERVER_JAR), "-d", str(ORACLE_CLASSES), str(ORACLE_SRC)])
-    if r.returncode != 0:
-        print("javac failed:\n" + r.stdout + r.stderr)
-        return 2
-
-    cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
     vanilla_parts = []
     for seed in SEEDS:
-        r = run(["java", "-cp", cp, "TerrainOracle", seed])
-        if r.returncode != 0:
-            print("java oracle failed:\n" + r.stdout + r.stderr)
+        try:
+            vanilla_parts.append(ORACLE.run([seed]))
+        except RuntimeError as e:
+            print(e)
             return 2
-        vanilla_parts.append(r.stdout)
     vanilla = "".join(vanilla_parts)
 
     r = run([find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "terrain_probe"])

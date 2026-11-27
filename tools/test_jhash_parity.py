@@ -20,10 +20,12 @@ import pathlib
 import subprocess
 import sys
 
+from _parity_cache import Oracle
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "HashOrderOracle.java"
 WORK = ROOT / ".local" / "jhash"
-ORACLE_CLASSES = WORK / "oracle-classes"
+ORACLE = Oracle("jhash", ORACLE_SRC, "HashOrderOracle", work=WORK)
 
 
 def find_cargo() -> str:
@@ -82,22 +84,15 @@ def cases() -> list[list[str]]:
 
 def main() -> int:
     WORK.mkdir(parents=True, exist_ok=True)
-    ORACLE_CLASSES.mkdir(parents=True, exist_ok=True)
 
-    r = run(["javac", "-d", str(ORACLE_CLASSES), str(ORACLE_SRC)])
-    if r.returncode != 0:
-        print("javac failed:\n" + r.stdout + r.stderr)
-        return 2
-
-    cp = str(ORACLE_CLASSES)
     checked = 0
     keys = 0
     for args in cases():
-        r = run(["java", "-cp", cp, "HashOrderOracle"] + args)
-        if r.returncode != 0:
-            print("java oracle failed:\n" + r.stdout + r.stderr)
+        try:
+            vanilla = ORACLE.run(args).strip()
+        except RuntimeError as e:
+            print(e)
             return 2
-        vanilla = r.stdout.strip()
 
         r = run([find_cargo(), "run", "-q", "-p", "mc-core", "--example", "jhash_probe", "--"] + args)
         if r.returncode != 0:

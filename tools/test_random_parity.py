@@ -12,10 +12,12 @@ import pathlib
 import subprocess
 import sys
 
+from _parity_cache import Oracle
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "RandomOracle.java"
 WORK = ROOT / ".local" / "random"
-ORACLE_CLASSES = WORK / "oracle-classes"
+ORACLE = Oracle("random", ORACLE_SRC, "RandomOracle", work=WORK)
 
 
 def find_cargo() -> str:
@@ -34,18 +36,12 @@ def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
 
 def main() -> int:
     WORK.mkdir(parents=True, exist_ok=True)
-    ORACLE_CLASSES.mkdir(parents=True, exist_ok=True)
 
-    r = run(["javac", "-d", str(ORACLE_CLASSES), str(ORACLE_SRC)])
-    if r.returncode != 0:
-        print("javac failed:\n" + r.stdout + r.stderr)
+    try:
+        vanilla = ORACLE.run([])
+    except RuntimeError as e:
+        print(e)
         return 2
-
-    r = run(["java", "-cp", str(ORACLE_CLASSES), "RandomOracle"])
-    if r.returncode != 0:
-        print("java oracle failed:\n" + r.stdout + r.stderr)
-        return 2
-    vanilla = r.stdout
 
     r = run([find_cargo(), "run", "-q", "-p", "mc-core", "--example", "random_probe"])
     if r.returncode != 0:

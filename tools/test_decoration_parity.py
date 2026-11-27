@@ -29,12 +29,15 @@ import os
 import pathlib
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+
+from _parity_cache import Oracle
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "DecorationOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "decoration"
-ORACLE_CLASSES = WORK / "oracle-classes"
+ORACLE = Oracle("decoration", ORACLE_SRC, "DecorationOracle", work=WORK, jar=SERVER_JAR)
 
 SEEDS = ["0", "12345", "-7"]
 CHUNKS = [(0, 0), (100, -50), (-37, 210), (-3, 0), (-48, -48), (6, 5)]
@@ -95,12 +98,16 @@ def chunk_args(chunks: list[tuple[int, int]]) -> list[str]:
     return [str(v) for c in chunks for v in c]
 
 
+def inner_jobs() -> int:
+    """How many (seed, mode) pairs to run at once; `parity.py` sets this to avoid oversubscription."""
+    try:
+        return max(1, int(os.environ.get("PARITY_INNER_JOBS", "1")))
+    except ValueError:
+        return 1
+
+
 def oracle(seed: str, mode: str, chunks: list[tuple[int, int]]) -> str:
-    cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
-    r = run(["java", "-cp", cp, "DecorationOracle", seed, mode] + chunk_args(chunks))
-    if r.returncode != 0:
-        raise RuntimeError("java oracle failed:\n" + r.stdout + r.stderr)
-    return r.stdout
+    return ORACLE.run([seed, mode] + chunk_args(chunks))
 
 
 def rust(seed: str, mode: str, chunks: list[tuple[int, int]]) -> str:
@@ -180,16 +187,8 @@ def main() -> int:
         return 3
 
     WORK.mkdir(parents=True, exist_ok=True)
-    ORACLE_CLASSES.mkdir(parents=True, exist_ok=True)
 
-    r = run(["javac", "-cp", str(SERVER_JAR), "-d", str(ORACLE_CLASSES), str(ORACLE_SRC)])
-    if r.returncode != 0:
-        print("javac failed:\n" + r.stdout + r.stderr)
-        return 2
-
-    total_lines = 0
-    plant_seen: set[int] = set()
-    override_seen: set[int] = set()
+    pairs: list[tuple[str, str, list[tuple[int, int]]]] = []
     for mode in MODES:
         for seed in SEEDS:
             if mode == "springs":
@@ -198,36 +197,50 @@ def main() -> int:
                 chunks = FULL_CHUNKS[seed]
             else:
                 chunks = CHUNKS
-            vanilla = oracle(seed, mode, chunks)
-            rust_out = rust(seed, mode, chunks)
+            pairs.append((mode, seed, chunks))
 
-            if "plant" in mode:
-                plant_seen |= _block_ids(vanilla)
-            if mode == "full":
-                override_seen |= _block_ids(vanilla)
+    def compute(pair: tuple[str, str, list[tuple[int, int]]]) -> tuple[str, str]:
+        mode, seed, chunks = pair
+        return oracle(seed, mode, chunks), rust(seed, mode, chunks)
 
-            if "ore" in mode and ore_count(vanilla) == 0:
-                print(f"FIXTURE ERROR: mode {mode} seed {seed}: no ore blocks placed")
-                return 1
-            if "plant" in mode and plant_count(vanilla) == 0:
-                print(f"FIXTURE ERROR: mode {mode} seed {seed}: no plant blocks placed")
-                return 1
-            if "tree" in mode and block_count(vanilla, TREE_IDS) == 0:
-                print(f"FIXTURE ERROR: mode {mode} seed {seed}: no tree blocks placed")
-                return 1
-            if "spring" in mode and spring_count(vanilla) == 0:
-                print(f"FIXTURE ERROR: mode {mode} seed {seed}: no spring blocks placed")
-                return 1
+    jobs = inner_jobs()
+    if jobs > 1:
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            outputs = list(pool.map(compute, pairs))
+    else:
+        outputs = [compute(pair) for pair in pairs]
 
-            (WORK / f"vanilla-{mode}-{seed}.txt").write_text(vanilla, encoding="utf-8")
-            (WORK / f"rust-{mode}-{seed}.txt").write_text(rust_out, encoding="utf-8")
+    total_lines = 0
+    plant_seen: set[int] = set()
+    override_seen: set[int] = set()
+    for (mode, seed, _chunks), (vanilla, rust_out) in zip(pairs, outputs):
+        if "plant" in mode:
+            plant_seen |= _block_ids(vanilla)
+        if mode == "full":
+            override_seen |= _block_ids(vanilla)
 
-            problem = first_mismatch(vanilla, rust_out)
-            if problem is not None:
-                print(f"MISMATCH (mode {mode}, seed {seed}):")
-                print("  " + problem)
-                return 1
-            total_lines += len(vanilla.splitlines())
+        if "ore" in mode and ore_count(vanilla) == 0:
+            print(f"FIXTURE ERROR: mode {mode} seed {seed}: no ore blocks placed")
+            return 1
+        if "plant" in mode and plant_count(vanilla) == 0:
+            print(f"FIXTURE ERROR: mode {mode} seed {seed}: no plant blocks placed")
+            return 1
+        if "tree" in mode and block_count(vanilla, TREE_IDS) == 0:
+            print(f"FIXTURE ERROR: mode {mode} seed {seed}: no tree blocks placed")
+            return 1
+        if "spring" in mode and spring_count(vanilla) == 0:
+            print(f"FIXTURE ERROR: mode {mode} seed {seed}: no spring blocks placed")
+            return 1
+
+        (WORK / f"vanilla-{mode}-{seed}.txt").write_text(vanilla, encoding="utf-8")
+        (WORK / f"rust-{mode}-{seed}.txt").write_text(rust_out, encoding="utf-8")
+
+        problem = first_mismatch(vanilla, rust_out)
+        if problem is not None:
+            print(f"MISMATCH (mode {mode}, seed {seed}):")
+            print("  " + problem)
+            return 1
+        total_lines += len(vanilla.splitlines())
 
     for name, ids in PLANT_SIGNATURE.items():
         if not (plant_seen & ids):

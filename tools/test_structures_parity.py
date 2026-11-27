@@ -25,11 +25,13 @@ import pathlib
 import subprocess
 import sys
 
+from _parity_cache import Oracle
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "StructuresOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "structures"
-ORACLE_CLASSES = WORK / "oracle-classes"
+ORACLE = Oracle("structures", ORACLE_SRC, "StructuresOracle", work=WORK, jar=SERVER_JAR)
 
 SEEDS = ["0", "12345", "-7"]
 CHUNKS = [
@@ -104,11 +106,7 @@ def chunk_args() -> list[str]:
 
 
 def oracle(seed: str) -> str:
-    cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
-    r = run(["java", "-cp", cp, "StructuresOracle", seed] + chunk_args())
-    if r.returncode != 0:
-        raise RuntimeError("java oracle failed:\n" + r.stdout + r.stderr)
-    return r.stdout
+    return ORACLE.run([seed] + chunk_args())
 
 
 def guard(text: str, seed: str) -> str | None:
@@ -153,12 +151,6 @@ def main() -> int:
         return 3
 
     WORK.mkdir(parents=True, exist_ok=True)
-    ORACLE_CLASSES.mkdir(parents=True, exist_ok=True)
-
-    r = run(["javac", "-cp", str(SERVER_JAR), "-d", str(ORACLE_CLASSES), str(ORACLE_SRC)])
-    if r.returncode != 0:
-        print("javac failed:\n" + r.stdout + r.stderr)
-        return 2
 
     total_lines = 0
     starts_seen = 0

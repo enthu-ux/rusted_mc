@@ -31,7 +31,8 @@ commit/push.
 - **Next increment:** the remaining `populate` pieces the Gate-C chunk still needs (water/lava lakes,
   dungeons, the freeze/snow pass; see below), then the full Gate-C chunk. **All six structures now
   have both layout and block placement parity.**
-- **Baseline:** `scripts/verify.ps1` -> **18/18** harnesses, **135** unit tests, fmt clean.
+- **Baseline:** `scripts/verify.ps1` -> **18/18** harnesses, **135** unit tests, fmt clean (~40 s
+  warm, ~5 min cold with `-Fresh`).
 
 ---
 
@@ -61,6 +62,17 @@ cargo test --workspace
 cargo fmt --all -- --check
 py tools/parity.py            # all parity harnesses
 py tools/parity.py random     # one harness by name
+```
+
+The runner caches each Java oracle's stdout under `.local/<harness>/oracle-cache/` (keyed on the
+oracle source, server jar, argv and env) and runs the harnesses in a bounded pool (`min(4, cores)`
+by default). A warm run (Rust-only changes) is ~40 s; a cold run is ~5 min. Use `-Fresh` after an
+oracle/jar/fixture change (or in CI), and `-Jobs N` to cap workers:
+
+```sh
+powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -Fresh       # ignore the caches
+powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -Jobs 1      # serial
+py tools/parity.py --fresh                                               # same, bare runner
 ```
 
 Expected today: `cargo test` and `fmt` pass (135 unit tests); `py tools/parity.py` reports
@@ -97,7 +109,8 @@ Rust/Java chunk benchmarks, and writes `.local/perf/`. `mc-perf` is env-gated: `
   (branch `main`, identity `enthu-ux <wassimbariza@gmail.com>`). Gitignored: `vendor/horizon/`,
   `vendor/minecraft/`, `vendor/reference/`, `vendor/tools/jdk21|w64devkit|*.jar|*.zip|*.exe`,
   `target/`, `.local/`, `logs/`. Push a session's work with `git add -A && git commit -m ... && git push`.
-- **Verify:** `scripts/verify.ps1` runs tests + format + all parity harnesses in one command.
+- **Verify:** `scripts/verify.ps1` runs tests + format + all parity harnesses in one command (cached
+  oracles + a bounded parallel pool; `-Fresh` for a cold run, `-Jobs N` to cap workers).
 
 ## Current state
 
@@ -1050,3 +1063,14 @@ heightmap) can match. P0's remaining items still need a running binary.
   `BlockSilverfish.EnumType.STONEBRICK` is meta **2**, not 0. 2 unit tests (**112 `mc-worldgen`**,
   135 total). `verify.ps1`: **18/18**. **All six structure generators now have layout + block
   placement parity.** **Next:** the lake/dungeon/freeze-snow `populate` stages, then the Gate-C chunk.
+- **2026-11-27 - session 31 (verify tooling: oracle cache + parallel runner).** Made
+  `scripts/verify.ps1` fast. New `tools/_parity_cache.py` caches each Java oracle's stdout keyed on
+  the oracle source hash + server-jar identity + argv + env (so a Rust-only edit skips the JVMs; the
+  class files are stamp-gated and the key never depends on the comparison). `tools/parity.py` now
+  prebuilds all examples once and runs the 18 harnesses in a bounded pool (`--jobs`, default
+  `min(4, cores)`; `--serial`, `--fresh`); `scripts/verify.ps1` gained `-Fresh` (sets
+  `PARITY_FRESH=1`) and `-Jobs N`. Decoration's 21 seed/mode pairs fan out when it is the only
+  selected harness. Measured on the 4-core dev box: full serial **610 s** -> cold parallel **293 s**
+  -> warm cache hit **38 s** (`verify.ps1` 39 s); focused `py tools/parity.py decoration` **14 s**.
+  All **18/18** green, 135 tests unchanged. **Next:** unchanged (lake/dungeon/freeze-snow `populate`
+  stages, then the Gate-C chunk).

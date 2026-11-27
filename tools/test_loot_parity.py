@@ -26,11 +26,13 @@ import pathlib
 import subprocess
 import sys
 
+from _parity_cache import Oracle
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "LootOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "loot"
-ORACLE_CLASSES = WORK / "oracle-classes"
+ORACLE = Oracle("loot", ORACLE_SRC, "LootOracle", work=WORK, jar=SERVER_JAR)
 
 SEEDS = ["0", "12345", "-7"]
 LEVELS = ["0", "5", "15", "30", "50"]
@@ -57,11 +59,10 @@ def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
 
 def one(mode: str, args: list[str]) -> tuple[str, str]:
     """Runs the oracle and the probe for one mode and returns their outputs, comparing them."""
-    cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
-    r = run(["java", "-cp", cp, "LootOracle", mode] + args)
-    if r.returncode != 0:
-        raise RuntimeError(f"java oracle failed ({mode}):\n" + r.stdout + r.stderr)
-    vanilla = r.stdout
+    try:
+        vanilla = ORACLE.run([mode] + args)
+    except RuntimeError as e:
+        raise RuntimeError(f"java oracle failed ({mode}):\n{e}")
 
     r = run([find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "loot_probe", "--", mode] + args)
     if r.returncode != 0:
@@ -88,12 +89,6 @@ def main() -> int:
         return 3
 
     WORK.mkdir(parents=True, exist_ok=True)
-    ORACLE_CLASSES.mkdir(parents=True, exist_ok=True)
-
-    r = run(["javac", "-cp", str(SERVER_JAR), "-d", str(ORACLE_CLASSES), str(ORACLE_SRC)])
-    if r.returncode != 0:
-        print("javac failed:\n" + r.stdout + r.stderr)
-        return 2
 
     try:
         table, _ = one("table", [])

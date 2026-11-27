@@ -25,11 +25,13 @@ import pathlib
 import subprocess
 import sys
 
+from _parity_cache import Oracle
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "CaveOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "caves"
-ORACLE_CLASSES = WORK / "oracle-classes"
+ORACLE = Oracle("caves", ORACLE_SRC, "CaveOracle", work=WORK, jar=SERVER_JAR)
 
 SEEDS = ["0", "12345", "-7"]
 MODES = [0, 1, 2, 3]
@@ -59,11 +61,7 @@ def chunk_args() -> list[str]:
 
 
 def oracle(seed: str, mode: int) -> str:
-    cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
-    r = run(["java", "-cp", cp, "CaveOracle", seed, str(mode)] + chunk_args())
-    if r.returncode != 0:
-        raise RuntimeError("java oracle failed:\n" + r.stdout + r.stderr)
-    return r.stdout
+    return ORACLE.run([seed, str(mode)] + chunk_args())
 
 
 def groups(text: str) -> list[tuple[str, list[str]]]:
@@ -122,12 +120,6 @@ def main() -> int:
         return 3
 
     WORK.mkdir(parents=True, exist_ok=True)
-    ORACLE_CLASSES.mkdir(parents=True, exist_ok=True)
-
-    r = run(["javac", "-cp", str(SERVER_JAR), "-d", str(ORACLE_CLASSES), str(ORACLE_SRC)])
-    if r.returncode != 0:
-        print("javac failed:\n" + r.stdout + r.stderr)
-        return 2
 
     modes = ",".join(str(m) for m in MODES)
     total_lines = 0

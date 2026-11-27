@@ -32,11 +32,13 @@ import pathlib
 import subprocess
 import sys
 
+from _parity_cache import Oracle
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "StrongholdPlacementOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "stronghold"
-ORACLE_CLASSES = WORK / "oracle-classes"
+ORACLE = Oracle("stronghold", ORACLE_SRC, "StrongholdPlacementOracle", work=WORK, jar=SERVER_JAR)
 
 # The 3 ring positions per seed (the origin chunk reports its own stronghold).
 CORPUS = [
@@ -76,12 +78,9 @@ def chunk_args(chunks: list[tuple[int, int]]) -> list[str]:
 
 
 def oracle(seed: str, chunks: list[tuple[int, int]], reverse: bool) -> str:
-    cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
-    env = {"STRONGHOLD_REVERSE": "1"} if reverse else None
-    r = run(["java", "-cp", cp, "StrongholdPlacementOracle", seed] + chunk_args(chunks), env)
-    if r.returncode != 0:
-        raise RuntimeError("java oracle failed:\n" + r.stdout + r.stderr)
-    return r.stdout
+    return ORACLE.run(
+        [seed] + chunk_args(chunks), env={"STRONGHOLD_REVERSE": "1" if reverse else None}
+    )
 
 
 def first_mismatch(vanilla: str, rust: str) -> str | None:
@@ -124,12 +123,6 @@ def main() -> int:
         return 3
 
     WORK.mkdir(parents=True, exist_ok=True)
-    ORACLE_CLASSES.mkdir(parents=True, exist_ok=True)
-
-    r = run(["javac", "-cp", str(SERVER_JAR), "-d", str(ORACLE_CLASSES), str(ORACLE_SRC)])
-    if r.returncode != 0:
-        print("javac failed:\n" + r.stdout + r.stderr)
-        return 2
 
     total_lines = 0
     total_chunks = 0

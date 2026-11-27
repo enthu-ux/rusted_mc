@@ -38,11 +38,13 @@ import pathlib
 import subprocess
 import sys
 
+from _parity_cache import Oracle
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "NetherPlacementOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "nether"
-ORACLE_CLASSES = WORK / "oracle-classes"
+ORACLE = Oracle("nether", ORACLE_SRC, "NetherPlacementOracle", work=WORK, jar=SERVER_JAR)
 
 # Fortress origins (their own chunk reports the whole start box). Each entry: (seed, chunks).
 CORPUS = [
@@ -83,20 +85,13 @@ def chunk_args(chunks: list[tuple[int, int]]) -> list[str]:
 
 
 def oracle(seed: str, chunks: list[tuple[int, int]], reverse: bool) -> str:
-    cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
-    env = {"NETHER_REVERSE": "1"} if reverse else None
-    r = run(["java", "-cp", cp, "NetherPlacementOracle", seed] + chunk_args(chunks), env)
-    if r.returncode != 0:
-        raise RuntimeError("java oracle failed:\n" + r.stdout + r.stderr)
-    return r.stdout
+    return ORACLE.run(
+        [seed] + chunk_args(chunks), env={"NETHER_REVERSE": "1" if reverse else None}
+    )
 
 
 def oracle_rng(chunks: list[tuple[int, int]]) -> str:
-    cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
-    r = run(["java", "-cp", cp, "NetherPlacementOracle", "rng"] + chunk_args(chunks))
-    if r.returncode != 0:
-        raise RuntimeError("java rng oracle failed:\n" + r.stdout + r.stderr)
-    return r.stdout
+    return ORACLE.run(["rng"] + chunk_args(chunks))
 
 
 def probe_rng(chunks: list[tuple[int, int]]) -> str:
@@ -149,12 +144,6 @@ def main() -> int:
         return 3
 
     WORK.mkdir(parents=True, exist_ok=True)
-    ORACLE_CLASSES.mkdir(parents=True, exist_ok=True)
-
-    r = run(["javac", "-cp", str(SERVER_JAR), "-d", str(ORACLE_CLASSES), str(ORACLE_SRC)])
-    if r.returncode != 0:
-        print("javac failed:\n" + r.stdout + r.stderr)
-        return 2
 
     # Pin the placement RNG stream itself (the block dump only sees deterministic writes).
     try:

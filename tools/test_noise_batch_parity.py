@@ -15,11 +15,13 @@ import pathlib
 import subprocess
 import sys
 
+from _parity_cache import Oracle
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ORACLE_SRC = ROOT / "oracle" / "java" / "src" / "NoiseBatchOracle.java"
 SERVER_JAR = ROOT / "vendor" / "minecraft" / "1.8.9" / "server-mcp.jar"
 WORK = ROOT / ".local" / "noise_batch"
-ORACLE_CLASSES = WORK / "oracle-classes"
+ORACLE = Oracle("noise_batch", ORACLE_SRC, "NoiseBatchOracle", work=WORK, jar=SERVER_JAR)
 
 
 def find_cargo() -> str:
@@ -42,19 +44,12 @@ def main() -> int:
         return 3
 
     WORK.mkdir(parents=True, exist_ok=True)
-    ORACLE_CLASSES.mkdir(parents=True, exist_ok=True)
 
-    r = run(["javac", "-cp", str(SERVER_JAR), "-d", str(ORACLE_CLASSES), str(ORACLE_SRC)])
-    if r.returncode != 0:
-        print("javac failed:\n" + r.stdout + r.stderr)
+    try:
+        vanilla = ORACLE.run([])
+    except RuntimeError as e:
+        print(e)
         return 2
-
-    cp = os.pathsep.join([str(ORACLE_CLASSES), str(SERVER_JAR)])
-    r = run(["java", "-cp", cp, "NoiseBatchOracle"])
-    if r.returncode != 0:
-        print("java oracle failed:\n" + r.stdout + r.stderr)
-        return 2
-    vanilla = r.stdout
 
     r = run([find_cargo(), "run", "-q", "-p", "mc-worldgen", "--example", "noise_batch_probe"])
     if r.returncode != 0:

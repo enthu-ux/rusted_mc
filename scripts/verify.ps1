@@ -1,5 +1,12 @@
 # One command to verify the workspace: tests, format, and all parity harnesses.
 # Usage: powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
+#   -Fresh   bypass the oracle output caches (cold run / oracle change)
+#   -Jobs N  parity worker count (default: parity.py picks min(4, cores))
+param(
+    [switch]$Fresh,
+    [int]$Jobs = 0
+)
+
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
@@ -10,6 +17,12 @@ if (-not (Test-Path $cargo)) { Write-Error "cargo not found; see vendor/tools/NO
 $pyCmd = (Get-Command py -ErrorAction SilentlyContinue).Source
 if (-not $pyCmd) { $pyCmd = (Get-Command python -ErrorAction SilentlyContinue).Source }
 if (-not $pyCmd) { Write-Error "python (py) not found"; exit 127 }
+
+if ($Fresh) {
+    $env:PARITY_FRESH = "1"
+} else {
+    Remove-Item Env:\PARITY_FRESH -ErrorAction SilentlyContinue
+}
 
 $failed = 0
 
@@ -22,7 +35,9 @@ Write-Host "== cargo fmt --all -- --check =="
 if ($LASTEXITCODE -ne 0) { $failed = 1 }
 
 Write-Host "== parity harnesses =="
-& $pyCmd (Join-Path $root 'tools\parity.py')
+$parityArgs = @()
+if ($Jobs -gt 0) { $parityArgs += @('--jobs', "$Jobs") }
+& $pyCmd (Join-Path $root 'tools\parity.py') @parityArgs
 if ($LASTEXITCODE -ne 0) { $failed = 1 }
 
 if ($failed -eq 0) { Write-Host "`nALL OK" } else { Write-Host "`nFAILED" }
